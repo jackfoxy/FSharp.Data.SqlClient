@@ -46,44 +46,6 @@
     <StartWorkingDirectory>
     </StartWorkingDirectory>
   </PropertyGroup>
-  <ItemGroup>
-    <Reference Include="FSharp.Core, Version=$(TargetFSharpCoreVersion), Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a">
-      <Private>True</Private>
-    </Reference>
-    <Reference Include="Microsoft.SqlServer.TransactSql.ScriptDom">
-      <HintPath>..\..\lib\Microsoft.SqlServer.TransactSql.ScriptDom.dll</HintPath>
-      <Private>True</Private>
-    </Reference>
-    <Reference Include="mscorlib" />
-    <Reference Include="System" />
-    <Reference Include="System.Configuration" />
-    <Reference Include="System.Core" />
-    <Reference Include="System.Data" />
-    <Reference Include="System.Numerics" />
-    <Reference Include="System.Runtime.Caching" />
-    <Reference Include="System.Transactions" />
-    <Reference Include="System.Xml" />
-  </ItemGroup>
-  <ItemGroup>
-    <Compile Include="AssemblyInfo.fs" />
-    <Compile Include="ProvidedTypes.fsi" />
-    <Compile Include="ProvidedTypes.fs" />
-    <Compile Include="DebugProvidedTypes.fs" />
-    <Compile Include="Configuration.fs" />
-    <Compile Include="ProvidedTypesCache.fs" />
-    <Compile Include="DynamicRecord.fs" />
-    <Compile Include="SqlClientExtensions.fs" />
-    <Compile Include="DataTable.fs" />
-    <Compile Include="ISqlCommand.fs" />
-    <Compile Include="QuotationsFactory.fs" />
-    <Compile Include="DesignTime.fs" />
-    <Compile Include="SqlCommandProvider.fs" />
-    <Compile Include="SqlClientProvider.fs" />
-    <Compile Include="SqlEnumProvider.fs" />
-    <Compile Include="Scripts\Scratchpad.fsx" />
-    <None Include="Scripts\XE.fsx" />
-    <None Include="packages.config" />
-  </ItemGroup>
   <PropertyGroup>
     <MinimumVisualStudioVersion Condition="'$(MinimumVisualStudioVersion)' == ''">11</MinimumVisualStudioVersion>
   </PropertyGroup>
@@ -107,6 +69,44 @@
     </PropertyGroup>
     <Error Condition="!Exists('$(SolutionDir)\.nuget\NuGet.targets')" Text="$([System.String]::Format('$(ErrorText)', '$(SolutionDir)\.nuget\NuGet.targets'))" />
   </Target>
+  <ItemGroup>
+    <Compile Include="ProvidedTypes.fsi" />
+    <Compile Include="ProvidedTypes.fs" />
+    <Compile Include="DebugProvidedTypes.fs" />
+    <Compile Include="AssemblyInfo.fs" />
+    <Compile Include="Configuration.fs" />
+    <Compile Include="ProvidedTypesCache.fs" />
+    <Compile Include="DynamicRecord.fs" />
+    <Compile Include="SqlClientExtensions.fs" />
+    <Compile Include="DataTable.fs" />
+    <Compile Include="ISqlCommand.fs" />
+    <Compile Include="QuotationsFactory.fs" />
+    <Compile Include="DesignTime.fs" />
+    <Compile Include="SqlCommandProvider.fs" />
+    <Compile Include="SqlClientProvider.fs" />
+    <Compile Include="SqlEnumProvider.fs" />
+    <Compile Include="Scripts\Scratchpad.fsx" />
+    <None Include="Scripts\XE.fsx" />
+    <Content Include="packages.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="FSharp.Core, Version=$(TargetFSharpCoreVersion), Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a">
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="Microsoft.SqlServer.TransactSql.ScriptDom">
+      <HintPath>..\..\lib\Microsoft.SqlServer.TransactSql.ScriptDom.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="mscorlib" />
+    <Reference Include="System" />
+    <Reference Include="System.Configuration" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Numerics" />
+    <Reference Include="System.Runtime.Caching" />
+    <Reference Include="System.Transactions" />
+    <Reference Include="System.Xml" />
+  </ItemGroup>
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
        Other similar extension points exist, see Microsoft.Common.targets.
   <Target Name="BeforeBuild">
