@@ -88,8 +88,9 @@ type public SqlClientProvider(config: TypeProviderConfig) as this =
         let tagProvidedType(t: ProvidedTypeDefinition) =
             t.AddMember(ProvidedProperty("ConnectionStringOrName", typeof<string>, [], IsStatic = true, GetterCode = fun _ -> <@@ connectionStringOrName @@>))
 
-//        do 
-//            let execute: ProvidedMethod = 
+        let commands = ProvidedTypeDefinition( "Commands", None)
+        databaseRootType.AddMember commands
+        this.AddCreateCommandMethod(conn, databaseRootType, commands)
 
         let schemas = 
             conn.GetUserSchemas() 
@@ -492,7 +493,43 @@ type public SqlClientProvider(config: TypeProviderConfig) as this =
             )
         tables
 
-//    member internal this.GetExecuteMethods(conn, sqlStatement, connectionStringOrName: string, resultType, singleRow, configFile, allParametersOptional, resolutionFolder, dataDirectory) = 
-//        let m = ProvidedMethod("Execute", [], typeof<obj>, IsStaticMethod = true)
-//        let parameters = DesignTime.ExtractParameters(conn, sqlStatement, allParametersOptional)
-//        m         
+    member internal this.AddCreateCommandMethod(conn, rootType: ProvidedTypeDefinition, commands: ProvidedTypeDefinition) = 
+        let staticParams = [
+            ProvidedStaticParameter("CommandText", typeof<string>) 
+            ProvidedStaticParameter("ResultType", typeof<ResultType>, ResultType.Records) 
+            ProvidedStaticParameter("SingleRow", typeof<bool>, false)   
+            ProvidedStaticParameter("AllParametersOptional", typeof<bool>, false) 
+        ]
+        let m = ProvidedMethod("CreateCommand", [], typeof<obj>, IsStaticMethod = true)
+        m.DefineStaticParameters(staticParams, (fun methodName args ->
+
+            let sqlStatementOrFile, resultType, singleRow, allParametersOptional = unbox args.[0], unbox args.[1], unbox args.[2], unbox args.[3]
+            
+            if singleRow && not (resultType = ResultType.Records || resultType = ResultType.Tuples)
+            then 
+                invalidArg "singleRow" "singleRow can be set only for ResultType.Records or ResultType.Tuples."
+
+            let commandTypeName = methodName.Replace("=", "")
+            let cmdProvidedType = ProvidedTypeDefinition(commandTypeName, Some typeof<``ISqlCommand Implementation``>, HideObjectMethods = true)
+            commands.AddMember cmdProvidedType
+
+            let ps = [ 
+                ProvidedParameter("connectionString", typeof<string>, optionalValue = "") 
+            ]
+            let impl = ProvidedMethod(methodName, ps, cmdProvidedType, IsStaticMethod = true)
+
+            impl.InvokeCode <- 
+                fun args -> 
+                        <@@ 
+                            let connectionString = 
+                                if String.IsNullOrEmpty( %%args.[0]) 
+                                then %%Expr.Value(conn.ConnectionString) 
+                                else %%args.[0]
+                            let cmd = new ``ISqlCommand Implementation``(Connection.Literal connectionString, 30, "select 42", false, [||], ResultType.Tuples, ResultRank.Sequence, (fun xs -> xs.[0]), typeof<int>.FullName)
+                            cmd
+                        @@>
+            rootType.AddMember impl
+            impl
+        ))
+        rootType.AddMember m
+
