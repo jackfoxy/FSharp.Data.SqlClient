@@ -1,15 +1,12 @@
 #r @"C:\Program Files (x86)\Microsoft SQL Server\110\SDK\Assemblies\Microsoft.SqlServer.Types.dll"
 #r "../../bin/Fsharp.Data.SqlClient.dll"
-//#load "ConnectionStrings.fs"
 open System
 open System.Data
 open FSharp.Data
 open System.Data.SqlClient
 
 [<Literal>] 
-//let connectionString = ConnectionStrings.AdventureWorksLiteral
-//let connectionString = ConnectionStrings.AdventureWorksAzure
-let connectionString = "Data Source=.;Initial Catalog=AdventureWorks2014;Integrated Security=True"
+let connectionString = "Data Source=.;Initial Catalog=AdventureWorks2014;Integrated Security=True;Type System Version=SQL Server 2008;"
 
 type DB = SqlClient<connectionString>
 type dbo = DB.dbo

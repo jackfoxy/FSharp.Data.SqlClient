@@ -70,6 +70,7 @@
     <Compile Include="DynamicRecordTests.fs" />
     <Compile Include="SqlEnumTests.fs" />
     <Compile Include="DataTablesTests.fs" />
+    <Compile Include="CreateCommand.fs" />
     <None Include="sampleCommand.sql" />
     <None Include="prereqs.sql" />
     <None Include="SqlCommand.fsx" />

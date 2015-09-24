@@ -117,8 +117,7 @@ type public SqlClientProvider(config: TypeProviderConfig) as this =
 
         let commands = ProvidedTypeDefinition( "Commands", None)
         databaseRootType.AddMember commands
-        this.AddCreateCommandMethod(conn, isByName, connectionStringOrName, databaseRootType, udttsPerSchema, commands)
-
+        this.AddCreateCommandMethod(conn, isByName, connectionStringName, databaseRootType, udttsPerSchema, commands)
 
         databaseRootType           
 
@@ -494,7 +493,7 @@ type public SqlClientProvider(config: TypeProviderConfig) as this =
             )
         tables
 
-    member internal this.AddCreateCommandMethod(conn, isByName, connectionStringOrName, rootType: ProvidedTypeDefinition, udttsPerSchema, commands: ProvidedTypeDefinition) = 
+    member internal this.AddCreateCommandMethod(conn, isByName, connectionStringName, rootType: ProvidedTypeDefinition, udttsPerSchema, commands: ProvidedTypeDefinition) = 
         let staticParams = [
             ProvidedStaticParameter("CommandText", typeof<string>) 
             ProvidedStaticParameter("ResultType", typeof<ResultType>, ResultType.Records) 
@@ -570,10 +569,10 @@ type public SqlClientProvider(config: TypeProviderConfig) as this =
                     let connArg = 
                         <@@ 
                             let tran: SqlTransaction = %%args.[1]
-                            let conn = if tran <> null then tran.Connection else %%args.[0]
-                            if conn <> null then Connection.``Connection and-or Transaction``(conn, tran)
-                            elif isByName then Connection.NameInConfig connectionStringOrName
-                            else Connection.Literal connectionStringOrName
+                            let runTimeConnection = if tran <> null then tran.Connection else %%args.[0]
+                            if runTimeConnection <> null then Connection.``Connection and-or Transaction``(runTimeConnection, tran)
+                            elif isByName then Connection.NameInConfig connectionStringName
+                            else Connection.Literal( %%Expr.Value(conn.ConnectionString))
                         @@>
                     Expr.NewObject(ctorImpl, connArg :: args.[2] :: ctorArgsExceptConnection)
 
