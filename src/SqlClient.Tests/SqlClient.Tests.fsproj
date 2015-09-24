@@ -74,7 +74,7 @@
     <None Include="sampleCommand.sql" />
     <None Include="prereqs.sql" />
     <None Include="SqlCommand.fsx" />
-    <None Include="SqlProgrammability.fsx" />
+    <None Include="CreateCommand.fsx" />
     <None Include="Schema.fsx" />
     <None Include="Performance.fsx" />
     <None Include="packages.config" />
