@@ -88,36 +88,37 @@ type public SqlClientProvider(config: TypeProviderConfig) as this =
         let tagProvidedType(t: ProvidedTypeDefinition) =
             t.AddMember(ProvidedProperty("ConnectionStringOrName", typeof<string>, [], IsStatic = true, GetterCode = fun _ -> <@@ connectionStringOrName @@>))
 
-        let commands = ProvidedTypeDefinition( "Commands", None)
-        databaseRootType.AddMember commands
-        this.AddCreateCommandMethod(conn, isByName, connectionStringOrName, databaseRootType, commands)
-
         let schemas = 
             conn.GetUserSchemas() 
             |> List.map (fun schema -> ProvidedTypeDefinition(schema, baseType = Some typeof<obj>, HideObjectMethods = true))
         
         databaseRootType.AddMembers schemas
 
-        let uddtsPerSchema = Dictionary()
+        let udttsPerSchema = Dictionary()
 
         for schemaType in schemas do
             let udttsRoot = ProvidedTypeDefinition("User-Defined Table Types", Some typeof<obj>)
             udttsRoot.AddMembersDelayed <| fun () -> 
                 this.UDTTs (conn.ConnectionString, schemaType.Name, tagProvidedType)
 
-            uddtsPerSchema.Add( schemaType.Name, udttsRoot)
+            udttsPerSchema.Add( schemaType.Name, udttsRoot)
             schemaType.AddMember udttsRoot
                 
         for schemaType in schemas do
 
             schemaType.AddMembersDelayed <| fun() -> 
                 [
-                    let routines = this.Routines(conn, schemaType.Name, uddtsPerSchema, isByName, connectionStringName, connectionStringOrName)
+                    let routines = this.Routines(conn, schemaType.Name, udttsPerSchema, isByName, connectionStringName, connectionStringOrName)
                     routines |> List.iter tagProvidedType
                     yield! routines
 
                     yield this.Tables(conn, schemaType.Name, isByName, connectionStringName, connectionStringOrName, tagProvidedType)
                 ]
+
+        let commands = ProvidedTypeDefinition( "Commands", None)
+        databaseRootType.AddMember commands
+        this.AddCreateCommandMethod(conn, isByName, connectionStringOrName, databaseRootType, udttsPerSchema, commands)
+
 
         databaseRootType           
 
@@ -147,7 +148,7 @@ type public SqlClientProvider(config: TypeProviderConfig) as this =
                 yield rowType
     ]
 
-    member internal __.Routines(conn, schema, uddtsPerSchema, isByName, connectionStringName, connectionStringOrName) = 
+    member internal __.Routines(conn, schema, udttsPerSchema, isByName, connectionStringName, connectionStringOrName) = 
         [
             use _ = conn.UseLocally()
             let isSqlAzure = conn.IsSqlAzure
@@ -221,7 +222,7 @@ type public SqlClientProvider(config: TypeProviderConfig) as this =
                         yield upcast ProvidedConstructor(ctor2Params, InvokeCode = ctor2Body)
                         yield upcast ProvidedMethod("Create", ctor2Params, returnType = cmdProvidedType, IsStaticMethod = true, InvokeCode = ctor2Body)
 
-                        let executeArgs = DesignTime.GetExecuteArgs(cmdProvidedType, parameters, uddtsPerSchema)
+                        let executeArgs = DesignTime.GetExecuteArgs(cmdProvidedType, parameters, udttsPerSchema)
 
                         yield upcast DesignTime.AddGeneratedMethod(parameters, executeArgs, cmdProvidedType.BaseType, output.ProvidedType, "Execute") 
                             
@@ -493,7 +494,7 @@ type public SqlClientProvider(config: TypeProviderConfig) as this =
             )
         tables
 
-    member internal this.AddCreateCommandMethod(conn, isByName, connectionStringOrName, rootType: ProvidedTypeDefinition, commands: ProvidedTypeDefinition) = 
+    member internal this.AddCreateCommandMethod(conn, isByName, connectionStringOrName, rootType: ProvidedTypeDefinition, udttsPerSchema, commands: ProvidedTypeDefinition) = 
         let staticParams = [
             ProvidedStaticParameter("CommandText", typeof<string>) 
             ProvidedStaticParameter("ResultType", typeof<ResultType>, ResultType.Records) 
@@ -527,7 +528,7 @@ type public SqlClientProvider(config: TypeProviderConfig) as this =
 
             do  //AsyncExecute, Execute, and ToTraceString
 
-                let executeArgs = DesignTime.GetExecuteArgs(cmdProvidedType, parameters, udttsPerSchema = null)
+                let executeArgs = DesignTime.GetExecuteArgs(cmdProvidedType, parameters, udttsPerSchema)
 
                 let addRedirectToISqlCommandMethod outputType name = 
                     DesignTime.AddGeneratedMethod(parameters, executeArgs, cmdProvidedType.BaseType, outputType, name) 

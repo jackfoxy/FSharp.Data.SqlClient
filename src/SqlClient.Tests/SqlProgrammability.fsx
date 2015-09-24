@@ -1,5 +1,5 @@
-#r "../../bin/Fsharp.Data.SqlClient.dll"
 #r @"C:\Program Files (x86)\Microsoft SQL Server\110\SDK\Assemblies\Microsoft.SqlServer.Types.dll"
+#r "../../bin/Fsharp.Data.SqlClient.dll"
 //#load "ConnectionStrings.fs"
 open System
 open System.Data
@@ -31,7 +31,7 @@ let get42AndTime = DB.CreateCommand<"SELECT 42, GETDATE()", ResultType.Tuples, S
 get42AndTime.AsyncExecute() |> Async.RunSynchronously |> printfn "%A"
 
 let myPerson = DB.CreateCommand<"exec Person.myProc @x", ResultType.Tuples, SingleRow = true, TypeName = "MyProc">()
-type MyTableType = DB.Commands.MyProc.MyTableType
+type MyTableType = DB.Person.``User-Defined Table Types``.MyTableType
 myPerson.Execute [ MyTableType(myId = 1, myName = Some "monkey"); MyTableType(myId = 2, myName = Some "donkey") ] 
 
 open Microsoft.SqlServer.Types
