@@ -90,7 +90,7 @@ type public SqlClientProvider(config: TypeProviderConfig) as this =
 
         let commands = ProvidedTypeDefinition( "Commands", None)
         databaseRootType.AddMember commands
-        this.AddCreateCommandMethod(conn, databaseRootType, commands)
+        this.AddCreateCommandMethod(conn, isByName, connectionStringOrName, databaseRootType, commands)
 
         let schemas = 
             conn.GetUserSchemas() 
@@ -493,41 +493,89 @@ type public SqlClientProvider(config: TypeProviderConfig) as this =
             )
         tables
 
-    member internal this.AddCreateCommandMethod(conn, rootType: ProvidedTypeDefinition, commands: ProvidedTypeDefinition) = 
+    member internal this.AddCreateCommandMethod(conn, isByName, connectionStringOrName, rootType: ProvidedTypeDefinition, commands: ProvidedTypeDefinition) = 
         let staticParams = [
             ProvidedStaticParameter("CommandText", typeof<string>) 
             ProvidedStaticParameter("ResultType", typeof<ResultType>, ResultType.Records) 
             ProvidedStaticParameter("SingleRow", typeof<bool>, false)   
             ProvidedStaticParameter("AllParametersOptional", typeof<bool>, false) 
+            ProvidedStaticParameter("TypeName", typeof<string>, "") 
         ]
         let m = ProvidedMethod("CreateCommand", [], typeof<obj>, IsStaticMethod = true)
         m.DefineStaticParameters(staticParams, (fun methodName args ->
 
-            let sqlStatementOrFile, resultType, singleRow, allParametersOptional = unbox args.[0], unbox args.[1], unbox args.[2], unbox args.[3]
+            let sqlStatement, resultType, singleRow, allParametersOptional, typename = 
+                unbox args.[0], unbox args.[1], unbox args.[2], unbox args.[3], unbox args.[4]
             
             if singleRow && not (resultType = ResultType.Records || resultType = ResultType.Tuples)
             then 
                 invalidArg "singleRow" "singleRow can be set only for ResultType.Records or ResultType.Tuples."
 
-            let commandTypeName = methodName.Replace("=", "")
-            let cmdProvidedType = ProvidedTypeDefinition(commandTypeName, Some typeof<``ISqlCommand Implementation``>, HideObjectMethods = true)
-            commands.AddMember cmdProvidedType
+            use __ = conn.UseLocally()
+            let parameters = DesignTime.ExtractParameters(conn, sqlStatement, allParametersOptional)
 
-            let ps = [ 
-                ProvidedParameter("connectionString", typeof<string>, optionalValue = "") 
+            let outputColumns = 
+                if resultType <> ResultType.DataReader
+                then DesignTime.GetOutputColumns(conn, sqlStatement, parameters, isStoredProcedure = false)
+                else []
+
+            let rank = if singleRow then ResultRank.SingleRow else ResultRank.Sequence
+            let output = DesignTime.GetOutputTypes(outputColumns, resultType, rank)
+
+            let commandTypeName = if typename <> "" then typename else methodName.Replace("=", "").Replace("@", "")
+            let cmdProvidedType = ProvidedTypeDefinition(commandTypeName, Some typeof<``ISqlCommand Implementation``>, HideObjectMethods = true)
+
+            do  //AsyncExecute, Execute, and ToTraceString
+
+                let executeArgs = DesignTime.GetExecuteArgs(cmdProvidedType, parameters, udttsPerSchema = null)
+
+                let addRedirectToISqlCommandMethod outputType name = 
+                    DesignTime.AddGeneratedMethod(parameters, executeArgs, cmdProvidedType.BaseType, outputType, name) 
+                    |> cmdProvidedType.AddMember
+
+                addRedirectToISqlCommandMethod output.ProvidedType "Execute" 
+                            
+                let asyncReturnType = ProvidedTypeBuilder.MakeGenericType(typedefof<_ Async>, [ output.ProvidedType ])
+                addRedirectToISqlCommandMethod asyncReturnType "AsyncExecute" 
+
+                addRedirectToISqlCommandMethod typeof<string> "ToTraceString" 
+
+            commands.AddMember cmdProvidedType
+            output.ProvidedRowType |> Option.iter cmdProvidedType.AddMember
+
+            let sqlParameters = Expr.NewArray( typeof<SqlParameter>, parameters |> List.map QuotationsFactory.ToSqlParam)
+
+            let isStoredProcedure = false
+            let ctorArgsExceptConnection = [
+                Expr.Value sqlStatement 
+                Expr.Value isStoredProcedure 
+                sqlParameters 
+                Expr.Value resultType 
+                Expr.Value rank
+                output.RowMapping 
+                Expr.Value output.ErasedToRowType.PartialAssemblyQualifiedName
             ]
-            let impl = ProvidedMethod(methodName, ps, cmdProvidedType, IsStaticMethod = true)
+
+            let methodParams = [
+                    ProvidedParameter("connection", typeof<SqlConnection>, optionalValue = null)
+                    ProvidedParameter("transaction", typeof<SqlTransaction>, optionalValue = null) 
+                    ProvidedParameter("commandTimeout", typeof<int>, optionalValue = SqlCommand.DefaultTimeout) 
+            ]
+            let impl = ProvidedMethod(methodName, methodParams, cmdProvidedType, IsStaticMethod = true)
 
             impl.InvokeCode <- 
                 fun args -> 
+                    let ctorImpl = typeof<``ISqlCommand Implementation``>.GetConstructors() |> Seq.exactlyOne
+                    let connArg = 
                         <@@ 
-                            let connectionString = 
-                                if String.IsNullOrEmpty( %%args.[0]) 
-                                then %%Expr.Value(conn.ConnectionString) 
-                                else %%args.[0]
-                            let cmd = new ``ISqlCommand Implementation``(Connection.Literal connectionString, 30, "select 42", false, [||], ResultType.Tuples, ResultRank.Sequence, (fun xs -> xs.[0]), typeof<int>.FullName)
-                            cmd
+                            let tran: SqlTransaction = %%args.[1]
+                            let conn = if tran <> null then tran.Connection else %%args.[0]
+                            if conn <> null then Connection.``Connection and-or Transaction``(conn, tran)
+                            elif isByName then Connection.NameInConfig connectionStringOrName
+                            else Connection.Literal connectionStringOrName
                         @@>
+                    Expr.NewObject(ctorImpl, connArg :: args.[2] :: ctorArgsExceptConnection)
+
             rootType.AddMember impl
             impl
         ))
