@@ -205,12 +205,14 @@ type public SqlProgrammabilityProvider(config : TypeProviderConfig) as this =
                                     typeof<Choice<string, SqlConnection>> 
                                     typeof<SqlTransaction>
                                     typeof<int>
+                                    typeof<SqlException -> bool>
                                 |]
 
                         let ctor2Params = [ 
                             ProvidedParameter("connection", typeof<SqlConnection>, optionalValue = null)
                             ProvidedParameter("transaction", typeof<SqlTransaction>, optionalValue = null) 
                             ProvidedParameter("commandTimeout", typeof<int>, optionalValue = SqlCommand.DefaultTimeout) 
+                            ProvidedParameter("error", typeof<SqlException -> bool>, optionalValue = null) 
                         ]
 
                         let ctor2Body (args: _ list) =

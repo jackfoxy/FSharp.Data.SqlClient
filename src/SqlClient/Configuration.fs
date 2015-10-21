@@ -19,7 +19,6 @@ open System
 open System.Threading.Tasks
 open System.Collections.Generic
 
-
 [<CompilerMessageAttribute("This API supports the FSharp.Data.SqlClient infrastructure and is not intended to be used directly from your code.", 101, IsHidden = true)>]
 type ConnectionString = 
     | Literal of string

@@ -162,12 +162,14 @@ type public SqlCommandProvider(config : TypeProviderConfig) as this =
                             typeof<Choice<string, SqlConnection>> 
                             typeof<SqlTransaction>
                             typeof<int>
+                            typeof<SqlException -> bool>
                         |]
 
                 let parameters = [ 
                     ProvidedParameter("connection", typeof<SqlConnection>, optionalValue = null)
                     ProvidedParameter("transaction", typeof<SqlTransaction>, optionalValue = null) 
                     ProvidedParameter("commandTimeout", typeof<int>, optionalValue = SqlCommand.DefaultTimeout) 
+                    ProvidedParameter("error", typeof<SqlException -> bool>, optionalValue = null) 
                 ]
 
                 let body (args: _ list) =

@@ -77,7 +77,7 @@ let local() =
     tran.Rollback()
     Assert.Equal(0, (new GetBitCoin()).Execute(bitCoinCode) |> Seq.length)
 
-type RaiseError = SqlCommandProvider<"SELECT 42; THROW 51000, 'Error raised.', 1 ", ConnectionStrings.AdventureWorksNamed>
+type RaiseError = SqlCommandProvider<"THROW 51000, 'Error raised.', 1 ", ConnectionStrings.AdventureWorksNamed>
 
 [<Fact>]
 let notCloseExternalConnInCaseOfError() =
@@ -86,7 +86,7 @@ let notCloseExternalConnInCaseOfError() =
     let tran = conn.BeginTransaction()
     use cmd = new RaiseError(conn, tran)
     try
-        cmd.Execute() |> Seq.toArray |> ignore
+        cmd.Execute() |> ignore
     with _ ->
         Assert.True(conn.State = ConnectionState.Open)
 
@@ -96,7 +96,7 @@ let notCloseExternalConnInCaseOfError2() =
     conn.Open()
     use cmd = new RaiseError(conn)
     try
-        cmd.Execute() |> Seq.toArray |> ignore
+        cmd.Execute() |> ignore
     with _ ->
         Assert.True(conn.State = ConnectionState.Open)
 
