@@ -165,14 +165,20 @@ type public SqlClientProvider(config: TypeProviderConfig) as this =
                         let outputColumns = DesignTime.GetOutputColumns(conn, commandText, parameters, routine.IsStoredProc)
 
                         let rank = match routine with ScalarValuedFunction _ -> ResultRank.ScalarValue | _ -> ResultRank.Sequence
-                        let output = DesignTime.GetOutputTypes(outputColumns, ResultType.Records, rank)
+
+                        let hasOutputParameters = parameters |> List.exists (fun x -> x.Direction.HasFlag( ParameterDirection.Output))
+                        let resultType = 
+                            if hasOutputParameters && not outputColumns.IsEmpty
+                            then ResultType.DataTable //force materialized output because output parameters is in second result set
+                            else ResultType.Records
+
+                        let output = DesignTime.GetOutputTypes(outputColumns, resultType, rank)
         
                         do  //Record
                             output.ProvidedRowType |> Option.iter cmdProvidedType.AddMember
 
                         //ctors
                         let sqlParameters = Expr.NewArray( typeof<SqlParameter>, parameters |> List.map QuotationsFactory.ToSqlParam)
-                        let rank = match routine with | ScalarValuedFunction _ -> ResultRank.ScalarValue | _ -> ResultRank.Sequence
 
                         let designTimeConfig = 
                             <@@ {
@@ -219,10 +225,12 @@ type public SqlClientProvider(config: TypeProviderConfig) as this =
 
                         let executeArgs = DesignTime.GetExecuteArgs(cmdProvidedType, parameters, uddtsPerSchema)
 
-                        yield upcast DesignTime.AddGeneratedMethod(parameters, executeArgs, cmdProvidedType.BaseType, output.ProvidedType, "Execute") 
-                            
-                        let asyncReturnType = ProvidedTypeBuilder.MakeGenericType(typedefof<_ Async>, [ output.ProvidedType ])
-                        yield upcast DesignTime.AddGeneratedMethod(parameters, executeArgs, cmdProvidedType.BaseType, asyncReturnType, "AsyncExecute")
+                        yield upcast DesignTime.AddGeneratedMethod(parameters, hasOutputParameters, executeArgs, cmdProvidedType.BaseType, output.ProvidedType, "Execute") 
+
+                        if not hasOutputParameters
+                        then                              
+                            let asyncReturnType = ProvidedTypeBuilder.MakeGenericType(typedefof<_ Async>, [ output.ProvidedType ])
+                            yield upcast DesignTime.AddGeneratedMethod(parameters, hasOutputParameters, executeArgs, cmdProvidedType.BaseType, asyncReturnType, "AsyncExecute")
 
                         if output.ErasedToRowType <> typeof<Void>
                         then 
@@ -238,8 +246,11 @@ type public SqlClientProvider(config: TypeProviderConfig) as this =
                                     [ providedReturnType ]
                                 ) 
 
-                            yield upcast DesignTime.AddGeneratedMethod(parameters, executeArgs, cmdProvidedType.BaseType, providedReturnType, "ExecuteSingle") 
-                            yield upcast DesignTime.AddGeneratedMethod(parameters, executeArgs, cmdProvidedType.BaseType, providedAsyncReturnType, "AsyncExecuteSingle")
+                            yield upcast DesignTime.AddGeneratedMethod(parameters, hasOutputParameters, executeArgs, cmdProvidedType.BaseType, providedReturnType, "ExecuteSingle") 
+
+                            if not hasOutputParameters
+                            then                              
+                                yield upcast DesignTime.AddGeneratedMethod(parameters, hasOutputParameters, executeArgs, cmdProvidedType.BaseType, providedAsyncReturnType, "AsyncExecuteSingle")
                     ]
 
                 yield cmdProvidedType
@@ -521,7 +532,8 @@ type public SqlClientProvider(config: TypeProviderConfig) as this =
                 let executeArgs = DesignTime.GetExecuteArgs(cmdProvidedType, parameters, udttsPerSchema)
 
                 let addRedirectToISqlCommandMethod outputType name = 
-                    DesignTime.AddGeneratedMethod(parameters, executeArgs, cmdProvidedType.BaseType, outputType, name) 
+                    let hasOutputParameters = false
+                    DesignTime.AddGeneratedMethod(parameters, hasOutputParameters, executeArgs, cmdProvidedType.BaseType, outputType, name) 
                     |> cmdProvidedType.AddMember
 
                 addRedirectToISqlCommandMethod output.ProvidedType "Execute" 
