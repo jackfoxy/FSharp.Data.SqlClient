@@ -210,3 +210,27 @@ let SpAndTVPinDiffSchema() =
         [| 1, None; 2, Some "donkey" |],
         [| for x in cmd.Execute( p) -> x.myId, x.myName |]
     )
+
+[<Fact>]
+let OutParam() = 
+    let cmd = new AdventureWorks.dbo.AddRef()
+    let x, y = 12, -1
+    let result = ref 0
+    cmd.Execute(x, y, result) |> ignore
+    Assert.Equal(x + y, !result)
+
+
+[<Fact>]
+let ResultSetAndOutParam() = 
+    let cmd = new AdventureWorks.dbo.HowManyRows()
+    let p = [
+        DboMyTableType(myId = 1)
+        DboMyTableType(myId = 2, myName = Some "donkey")
+    ]
+    let total = ref 0
+    let result = cmd.Execute(p, total) 
+    Assert.Equal<_ list>(
+        [ Some "donkey" ], 
+        [ for row in result.Rows -> row.myName ]
+    )
+    Assert.Equal(2, !total)
