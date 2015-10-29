@@ -11,6 +11,9 @@ let connectionString = "Data Source=.;Initial Catalog=AdventureWorks2014;Integra
 type DB = SqlClient<connectionString>
 type dbo = DB.dbo
 
+//let x = DB.GetValue(42.)
+//let xx = x * 12.<DB.bbl>
+
 let connection = new SqlConnection(connectionString)
 connection.Open()
 
@@ -42,3 +45,4 @@ let getEmployeeByLevel = DB.CreateCommand<"
 let p = SqlHierarchyId.Parse(SqlString("/1/1/"))
 
 getEmployeeByLevel.Execute( p)|> printfn "%A"
+

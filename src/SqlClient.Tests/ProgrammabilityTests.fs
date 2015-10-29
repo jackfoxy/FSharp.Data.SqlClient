@@ -4,8 +4,6 @@ open System
 open System.Data.SqlClient
 open Xunit
 
-type AdventureWorks = SqlClient<ConnectionStrings.AdventureWorksNamed>
-
 type GetContactInformation = AdventureWorks.dbo.ufnGetContactInformation
 
 [<Fact>]
@@ -50,7 +48,7 @@ let localTransactionCtor() =
     let jamesKramerId = 42
 
     let businessEntityID, jobTitle, hireDate = 
-        use cmd = new SqlCommandProvider<"
+        use cmd = AdventureWorks.CreateCommand<"
             SELECT 
 	            BusinessEntityID
 	            ,JobTitle
@@ -59,7 +57,7 @@ let localTransactionCtor() =
                 HumanResources.Employee 
             WHERE 
                 BusinessEntityID = @id
-            ", ConnectionStrings.AdventureWorksNamed, ResultType.Tuples, SingleRow = true>(conn, tran)
+            ", ResultType.Tuples, SingleRow = true>(conn, tran)
         jamesKramerId |> cmd.Execute |> Option.get
 
     Assert.Equal<string>("Production Technician - WC60", jobTitle)
@@ -96,7 +94,7 @@ let localTransactionCreateAndSingleton() =
     let jamesKramerId = 42
 
     let businessEntityID, jobTitle, hireDate = 
-        use cmd = SqlCommandProvider<"
+        use cmd = AdventureWorks.CreateCommand<"
             SELECT 
 	            BusinessEntityID
 	            ,JobTitle
@@ -105,7 +103,7 @@ let localTransactionCreateAndSingleton() =
                 HumanResources.Employee 
             WHERE 
                 BusinessEntityID = @id
-            ", ConnectionStrings.AdventureWorksNamed, ResultType.Tuples, SingleRow = true>.Create(conn, tran)
+            ", ResultType.Tuples, SingleRow = true>(conn, tran)
         jamesKramerId |> cmd.Execute |> Option.get
 
     Assert.Equal<string>("Production Technician - WC60", jobTitle)

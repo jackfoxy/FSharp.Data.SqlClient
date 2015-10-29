@@ -32,7 +32,9 @@ type public SqlClientProvider(config: TypeProviderConfig) as this =
     do 
         this.Disposing.Add <| fun _ -> 
             cache.Dispose()
+#if !DEBUG
             clearDataTypesMap()
+#endif
     do 
         //this.RegisterRuntimeAssemblyLocationAsProbingFolder( config) 
 
@@ -81,6 +83,18 @@ type public SqlClientProvider(config: TypeProviderConfig) as this =
         conn.LoadDataTypesMap()
 
         let databaseRootType = ProvidedTypeDefinition(assembly, nameSpace, typeName, baseType = Some typeof<obj>, HideObjectMethods = true)
+
+//        do //try units of measure
+//            let units = ProvidedTypeDefinition("bbl", None)
+//            databaseRootType.AddMember units
+//            units.AddCustomAttribute { 
+//                new CustomAttributeData() with
+//                    member __.Constructor = typeof<MeasureAttribute>.GetConstructor [||]
+//            }
+//            let uomType = ProvidedMeasureBuilder.Default.AnnotateType( typeof<float>, [ units ])
+//            let m = ProvidedMethod("GetValue", [ ProvidedParameter("x", typeof<float>) ], uomType, IsStaticMethod = true)
+//            m.InvokeCode <- fun args -> <@@ %%args.Head : float @@> 
+//            databaseRootType.AddMember m
 
         let tagProvidedType(t: ProvidedTypeDefinition) =
             t.AddMember(ProvidedProperty("ConnectionStringOrName", typeof<string>, [], IsStatic = true, GetterCode = fun _ -> <@@ connectionStringOrName @@>))

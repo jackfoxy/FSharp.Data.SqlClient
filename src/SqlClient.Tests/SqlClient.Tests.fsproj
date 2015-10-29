@@ -58,13 +58,12 @@
   <Import Project="$(SolutionDir)\.nuget\NuGet.targets" Condition="Exists('$(SolutionDir)\.nuget\NuGet.targets')" />
   <ItemGroup>
     <Compile Include="Assert.fs" />
-    <Compile Include="ConnectionStrings.fs" />
+    <Compile Include="Connection.fs" />
     <Compile Include="ConfigurationTest.fs" />
     <Compile Include="OptionalParamsTests.fs" />
     <Compile Include="TypeProviderTest.fs" />
     <Compile Include="SpatialTypesTests.fs" />
     <Compile Include="TransactionTests.fs" />
-    <Compile Include="ResultTypeTests.fs" />
     <Compile Include="TVPTests.fs" />
     <Compile Include="ProgrammabilityTests.fs" />
     <Compile Include="DynamicRecordTests.fs" />

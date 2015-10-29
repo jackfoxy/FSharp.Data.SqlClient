@@ -44,7 +44,7 @@ type SingleColumnSelect = SqlEnum<"SELECT Name FROM Purchasing.ShipMethod", Conn
 let SingleColumn() =
     Assert.Equal<string>("CARGO TRANSPORT 5", SingleColumnSelect.``CARGO TRANSPORT 5``)
     let all = 
-        use cmd = new SqlCommandProvider<"SELECT Name, Name FROM Purchasing.ShipMethod", ConnectionStrings.AdventureWorksNamed, ResultType.Tuples>()
+        use cmd = AdventureWorks.CreateCommand<"SELECT Name, Name FROM Purchasing.ShipMethod", ResultType.Tuples>()
         cmd.Execute() |> Seq.toArray
     let items = SingleColumnSelect.Items
     Assert.Equal<_ seq>(all, items)

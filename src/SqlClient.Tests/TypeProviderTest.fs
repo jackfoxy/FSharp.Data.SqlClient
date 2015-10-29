@@ -40,9 +40,9 @@ let TinyIntConversion() =
 
 [<Fact>]
 let ConditionalQuery() = 
-    use cmd = new SqlCommandProvider<"IF @flag = 0 SELECT 1, 'monkey' ELSE SELECT 2, 'donkey'", ConnectionStrings.AdventureWorksNamed, SingleRow=true, ResultType = ResultType.Tuples>()
-    Assert.Equal(Some(1, "monkey"), cmd.Execute(flag = 0))    
-    Assert.Equal(Some(2, "donkey"), cmd.Execute(flag = 1))    
+    use cmd = new SqlCommandProvider<"IF @flag = 0 SELECT _1=1, _2='monkey' ELSE SELECT _1=2, _2='donkey'", ConnectionStrings.AdventureWorksNamed, SingleRow = true>()
+    Assert.Equal(Some(1, "monkey"), cmd.Execute(flag = 0) |> Option.map (fun x -> x._1, x._2))    
+    Assert.Equal(Some(2, "donkey"), cmd.Execute(flag = 1) |> Option.map (fun x -> x._1, x._2))    
 
 [<Fact>]
 let columnsShouldNotBeNull2() = 
@@ -51,10 +51,12 @@ let columnsShouldNotBeNull2() =
         FROM INFORMATION_SCHEMA.COLUMNS
         WHERE TABLE_NAME = 'DatabaseLog' and numeric_precision is null
         ORDER BY ORDINAL_POSITION
-    ", ConnectionStrings.AdventureWorksNamed, ResultType.Tuples, SingleRow = true>()
+    ", ConnectionStrings.AdventureWorksNamed, SingleRow = true>()
 
-    let _,_,_,_,precision = cmd.Execute().Value
-    Assert.Equal(None, precision)    
+    Assert.Equal(
+        None, 
+        cmd.Execute().Value.NUMERIC_PRECISION
+    )    
 
 [<Literal>]
 let bitCoinCode = "BTC"
@@ -85,8 +87,8 @@ let singleRowOption() =
 let ToTraceString() =
     let now = DateTime.Now
     let num = 42
-    let expected = sprintf "exec sp_executesql N'SELECT CAST(@Date AS DATE), CAST(@Number AS INT)',N'@Date Date,@Number Int',@Date='%A',@Number='%d'" now num
-    let cmd = new SqlCommandProvider<"SELECT CAST(@Date AS DATE), CAST(@Number AS INT)", ConnectionStrings.AdventureWorksNamed, ResultType.Tuples>()
+    let expected = sprintf "exec sp_executesql N'SELECT CAST(@Date AS DATE) AS _1, CAST(@Number AS INT) AS _2',N'@Date Date,@Number Int',@Date='%A',@Number='%d'" now num
+    let cmd = new SqlCommandProvider<"SELECT CAST(@Date AS DATE) AS _1, CAST(@Number AS INT) AS _2", ConnectionStrings.AdventureWorksNamed>()
     Assert.Equal<string>(
         expected, 
         actual = cmd.ToTraceString( now, num)
@@ -180,6 +182,10 @@ let ConcurrentReaders() =
     let actual = (cmd.Execute(), cmd.Execute()) ||> Seq.zip |> Seq.toArray
     Assert.Equal<_[]>(expected, actual)
 
+[<Fact>]
+let tableTypeTag() = 
+    Assert.Equal<string>(ConnectionStrings.AdventureWorksNamed, GetEvenNumbers.ConnectionStringOrName)
+
 module ``The undeclared parameter 'X' is used more than once in the batch being analyzed`` = 
     [<Fact>]
     let Basic() =
@@ -229,3 +235,4 @@ module ``The undeclared parameter 'X' is used more than once in the batch being 
         ", ConnectionStrings.AdventureWorksNamed>()
         let actual = [ for x in cmd.Execute( TimeSpan(16, 0, 0)) -> x.Name ]
         Assert.Equal<_ list>([ "Evening" ], actual )
+
