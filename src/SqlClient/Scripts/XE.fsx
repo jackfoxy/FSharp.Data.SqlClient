@@ -19,15 +19,17 @@ do
         sprintf "
             IF EXISTS(SELECT * FROM sys.server_event_sessions WHERE name='%s')
                 DROP EVENT session %s ON SERVER
-
-            CREATE EVENT SESSION [%s] 
-            ON SERVER
-                ADD EVENT sqlserver.object_altered
-                (
-                    ACTION (sqlserver.database_name)
-                    WHERE  (sqlserver.database_name = '%s')
-                )
-                WITH (EVENT_RETENTION_MODE = NO_EVENT_LOSS, MAX_DISPATCH_LATENCY = 1 SECONDS)
+            BEGIN
+                CREATE EVENT SESSION [%s] 
+                ON SERVER
+                    ADD EVENT sqlserver.object_created
+                    ADD EVENT sqlserver.object_deleted
+                    ADD EVENT sqlserver.object_altered
+                    (
+                        ACTION (sqlserver.database_name)
+                        WHERE  (sqlserver.database_name = '%s')
+                    )
+            END
 
             ALTER EVENT SESSION [XE_Alter] ON SERVER STATE = START
         " xeSession xeSession xeSession targetDatabase
