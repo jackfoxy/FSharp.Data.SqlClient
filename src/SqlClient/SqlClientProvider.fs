@@ -43,9 +43,10 @@ type public SqlClientProvider(config: TypeProviderConfig) as this =
                 ProvidedStaticParameter("ConnectionStringOrName", typeof<string>) 
                 ProvidedStaticParameter("ConfigFile", typeof<string>, "") 
                 ProvidedStaticParameter("DataDirectory", typeof<string>, "") 
+                ProvidedStaticParameter("UseReturnValue", typeof<bool>, false) 
             ],             
             instantiationFunction = (fun typeName args ->
-                cache.GetOrAdd(typeName, lazy this.CreateRootType(typeName, unbox args.[0], unbox args.[1], unbox args.[2]))
+                cache.GetOrAdd(typeName, lazy this.CreateRootType(typeName, unbox args.[0], unbox args.[1], unbox args.[2], unbox args.[3]))
             ) 
         )
 
@@ -59,11 +60,13 @@ type public SqlClientProvider(config: TypeProviderConfig) as this =
         this.AddNamespace(nameSpace, [ providerType ])
     
     override this.ResolveAssembly args = 
-        match config.ReferencedAssemblies |> Array.tryFind (fun x -> AssemblyName.ReferenceMatchesDefinition(AssemblyName.GetAssemblyName x, AssemblyName args.Name)) with
-        | Some x -> Assembly.LoadFrom x
-        | None -> base.ResolveAssembly args
+        config.ReferencedAssemblies 
+        |> Array.tryFind (fun x -> AssemblyName.ReferenceMatchesDefinition(AssemblyName.GetAssemblyName x, AssemblyName args.Name)) 
+        |> Option.map Assembly.LoadFrom
+        |> defaultArg 
+        <| base.ResolveAssembly args
 
-    member internal this.CreateRootType( typeName, connectionStringOrName, configFile, dataDirectory) =
+    member internal this.CreateRootType( typeName, connectionStringOrName, configFile, dataDirectory, useReturnValue) =
         if String.IsNullOrWhiteSpace connectionStringOrName then invalidArg "ConnectionStringOrName" "Value is empty!" 
         
         let connectionString = ConnectionString.Parse connectionStringOrName
@@ -119,7 +122,7 @@ type public SqlClientProvider(config: TypeProviderConfig) as this =
 
             schemaType.AddMembersDelayed <| fun() -> 
                 [
-                    let routines = this.Routines(conn, schemaType.Name, udttsPerSchema, connectionString)
+                    let routines = this.Routines(conn, schemaType.Name, udttsPerSchema, ResultType.Records, connectionString, useReturnValue)
                     routines |> List.iter tagProvidedType
                     yield! routines
 
@@ -158,7 +161,7 @@ type public SqlClientProvider(config: TypeProviderConfig) as this =
                 yield rowType
     ]
 
-    member internal __.Routines(conn, schema, uddtsPerSchema, connectionString) = 
+    member internal __.Routines(conn, schema, uddtsPerSchema, resultType, connectionString, useReturnValue) = 
         [
             use _ = conn.UseLocally()
             let isSqlAzure = conn.IsSqlAzure
@@ -173,20 +176,15 @@ type public SqlClientProvider(config: TypeProviderConfig) as this =
                 cmdProvidedType.AddMembersDelayed <| fun() ->
                     [
                         use __ = conn.UseLocally()
-                        let parameters = conn.GetParameters( routine, isSqlAzure)
+                        let parameters = conn.GetParameters( routine, isSqlAzure, useReturnValue)
 
                         let commandText = routine.ToCommantText(parameters)
                         let outputColumns = DesignTime.GetOutputColumns(conn, commandText, parameters, routine.IsStoredProc)
-
                         let rank = match routine with ScalarValuedFunction _ -> ResultRank.ScalarValue | _ -> ResultRank.Sequence
 
                         let hasOutputParameters = parameters |> List.exists (fun x -> x.Direction.HasFlag( ParameterDirection.Output))
-                        let resultType = 
-                            if hasOutputParameters && not outputColumns.IsEmpty
-                            then ResultType.DataTable //force materialized output because output parameters is in second result set
-                            else ResultType.Records
 
-                        let output = DesignTime.GetOutputTypes(outputColumns, resultType, rank)
+                        let output = DesignTime.GetOutputTypes(outputColumns, resultType, rank, hasOutputParameters)
         
                         do  //Record
                             output.ProvidedRowType |> Option.iter cmdProvidedType.AddMember
@@ -195,6 +193,12 @@ type public SqlClientProvider(config: TypeProviderConfig) as this =
                         let sqlParameters = Expr.NewArray( typeof<SqlParameter>, parameters |> List.map QuotationsFactory.ToSqlParam)
 
                         let designTimeConfig = 
+                            let expectedDataReaderColumns = 
+                                Expr.NewArray(
+                                    typeof<string * string>, 
+                                    [ for c in outputColumns -> Expr.NewTuple [ Expr.Value c.Name; Expr.Value c.TypeInfo.ClrTypeFullName ] ]
+                                )
+
                             <@@ {
                                 ConnectionString = %%connectionString.Expr
                                 SqlStatement = commandText
@@ -204,38 +208,34 @@ type public SqlClientProvider(config: TypeProviderConfig) as this =
                                 Rank = rank
                                 RowMapping = %%output.RowMapping
                                 ItemTypeName = %%Expr.Value( output.ErasedToRowType.PartialAssemblyQualifiedName)
+                                ExpectedDataReaderColumns = %%expectedDataReaderColumns
                             } @@>
 
                         
                         //ctor 1
-                        let ctor1Impl = typeof<``ISqlCommand Implementation``>.GetConstructor( [| typeof<DesignTimeConfig>; typeof<string> |])
-                        let ctor1Params = [ ProvidedParameter("connectionString", typeof<string>) ]
-                        let ctor1Body args = Expr.NewObject(ctor1Impl, designTimeConfig :: args )
-                        yield ProvidedConstructor(ctor1Params, InvokeCode = ctor1Body) :> MemberInfo
-                        yield upcast ProvidedMethod("Create", ctor1Params, returnType = cmdProvidedType, IsStaticMethod = true, InvokeCode = ctor1Body)
+                        let ctor1 = ProvidedConstructor [ ProvidedParameter("connectionString", typeof<string>) ] 
+                        ctor1.InvokeCode <- 
+                            let impl =  typeof<``ISqlCommand Implementation``>.GetConstructor( [| typeof<DesignTimeConfig>; typeof<string> |])
+                            fun args -> Expr.NewObject(impl, designTimeConfig :: args )
+                        yield ctor1 :> MemberInfo
 
                         //ctor 2
-                        let ctor2Impl = 
-                            typeof<``ISqlCommand Implementation``>
-                                .GetConstructor [| 
-                                    typeof<DesignTimeConfig>
-                                    typeof<Choice<string, SqlConnection>> 
-                                    typeof<SqlTransaction>
-                                    typeof<int>
-                                |]
+                        let ctor2 = 
+                            ProvidedConstructor(
+                                [ 
+                                    ProvidedParameter("connection", typeof<SqlConnection>, optionalValue = null)
+                                    ProvidedParameter("transaction", typeof<SqlTransaction>, optionalValue = null) 
+                                    ProvidedParameter("commandTimeout", typeof<int>, optionalValue = SqlCommand.DefaultTimeout) 
+                                ]
+                            )
+                        ctor2.InvokeCode <-
+                            let impl = 
+                                typeof<``ISqlCommand Implementation``>.GetConstructor [| typeof<DesignTimeConfig>; typeof<Choice<string, SqlConnection>>; typeof<SqlTransaction>; typeof<int> |]
+                            fun args -> 
+                                let connArg = <@@ Choice2Of2(%%args.[0]): Choice<string, SqlConnection> @@>
+                                Expr.NewObject(impl, designTimeConfig :: connArg :: args.Tail )
 
-                        let ctor2Params = [ 
-                            ProvidedParameter("connection", typeof<SqlConnection>, optionalValue = null)
-                            ProvidedParameter("transaction", typeof<SqlTransaction>, optionalValue = null) 
-                            ProvidedParameter("commandTimeout", typeof<int>, optionalValue = SqlCommand.DefaultTimeout) 
-                        ]
-
-                        let ctor2Body (args: _ list) =
-                            let connArg = <@@ Choice2Of2(%%args.[0]): Choice<string, SqlConnection> @@>
-                            Expr.NewObject(ctor2Impl, designTimeConfig :: connArg :: args.Tail )
-
-                        yield upcast ProvidedConstructor(ctor2Params, InvokeCode = ctor2Body)
-                        yield upcast ProvidedMethod("Create", ctor2Params, returnType = cmdProvidedType, IsStaticMethod = true, InvokeCode = ctor2Body)
+                        yield upcast ctor2
 
                         let executeArgs = DesignTime.GetExecuteArgs(cmdProvidedType, parameters, uddtsPerSchema)
 
@@ -260,10 +260,9 @@ type public SqlClientProvider(config: TypeProviderConfig) as this =
                                     [ providedReturnType ]
                                 ) 
 
-                            yield upcast DesignTime.AddGeneratedMethod(parameters, hasOutputParameters, executeArgs, cmdProvidedType.BaseType, providedReturnType, "ExecuteSingle") 
-
                             if not hasOutputParameters
                             then                              
+                                yield upcast DesignTime.AddGeneratedMethod(parameters, hasOutputParameters, executeArgs, cmdProvidedType.BaseType, providedReturnType, "ExecuteSingle") 
                                 yield upcast DesignTime.AddGeneratedMethod(parameters, hasOutputParameters, executeArgs, cmdProvidedType.BaseType, providedAsyncReturnType, "AsyncExecuteSingle")
                     ]
 
@@ -324,8 +323,19 @@ type public SqlClientProvider(config: TypeProviderConfig) as this =
 
                 let columns =  
                     cmd.ExecuteQuery( fun x ->
-                        let c = Column.Parse(x, fun(system_type_id, user_type_id) -> findTypeInfoBySqlEngineTypeId(conn.ConnectionString, system_type_id, user_type_id)) 
-                        { c with DefaultConstraint = string x.["default_constraint"]; Description = string x.["description"]}
+                        let c = 
+                            Column.Parse(
+                                x, 
+                                (fun(system_type_id, user_type_id) -> findTypeInfoBySqlEngineTypeId(conn.ConnectionString, system_type_id, user_type_id)),
+                                ?defaultValue = x.TryGetValue("default_constraint"), 
+                                ?description = x.TryGetValue("description")
+                            ) 
+                        if c.DefaultConstraint <> "" && c.PartOfUniqueKey 
+                        then 
+                            { c with PartOfUniqueKey = false } 
+                            //ADO.NET doesn't allow nullable columns as part of primary key
+                            //remove from PK if default value provided by DB on insert.
+                        else c
                     )
                     |> Seq.toArray
 
@@ -536,7 +546,7 @@ type public SqlClientProvider(config: TypeProviderConfig) as this =
                 else []
 
             let rank = if singleRow then ResultRank.SingleRow else ResultRank.Sequence
-            let output = DesignTime.GetOutputTypes(outputColumns, resultType, rank)
+            let output = DesignTime.GetOutputTypes(outputColumns, resultType, rank, hasOutputParameters = false)
 
             let commandTypeName = if typename <> "" then typename else methodName.Replace("=", "").Replace("@", "")
             let cmdProvidedType = ProvidedTypeDefinition(commandTypeName, Some typeof<``ISqlCommand Implementation``>, HideObjectMethods = true)
@@ -561,6 +571,12 @@ type public SqlClientProvider(config: TypeProviderConfig) as this =
             output.ProvidedRowType |> Option.iter cmdProvidedType.AddMember
 
             let designTimeConfig = 
+                let expectedDataReaderColumns = 
+                    Expr.NewArray(
+                        typeof<string * string>, 
+                        [ for c in outputColumns -> Expr.NewTuple [ Expr.Value c.Name; Expr.Value c.TypeInfo.ClrTypeFullName ] ]
+                    )
+
                 <@@ {
                     ConnectionString = %%connectionString.Expr
                     SqlStatement = sqlStatement
@@ -570,6 +586,7 @@ type public SqlClientProvider(config: TypeProviderConfig) as this =
                     Rank = rank
                     RowMapping = %%output.RowMapping
                     ItemTypeName = %%Expr.Value( output.ErasedToRowType.PartialAssemblyQualifiedName)
+                    ExpectedDataReaderColumns = %%expectedDataReaderColumns
                 } @@>
 
             let impl = 

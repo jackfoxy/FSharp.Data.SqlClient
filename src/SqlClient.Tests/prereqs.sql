@@ -61,10 +61,12 @@ IF OBJECT_ID(N'dbo.TableHavingColumnNamesWithSpaces') IS NOT NULL
 	DROP TABLE dbo.TableHavingColumnNamesWithSpaces
 GO
 
-CREATE PROCEDURE dbo.AddRef @x AS INT, @y AS INT, @result AS INT OUTPUT 
+
+CREATE PROCEDURE dbo.AddRef @x AS INT, @y AS INT, @sum AS INT OUTPUT 
 AS
 BEGIN
-	SET @result = @x + @y
+	SET @sum = @x + @y
+	RETURN (@x + @y)
 END
 GO
 
@@ -185,14 +187,8 @@ GO
 
 CREATE PROCEDURE dbo.HowManyRows @p1 dbo.MyTableType READONLY, @total AS BIGINT OUTPUT AS
 BEGIN
-<<<<<<< HEAD
-	SELECT * FROM @p1 WHERE myName IS NOT NULL
-	SET @total = (SELECT COUNT(*) FROM @p1)
-=======
 	SET @total = (SELECT COUNT_BIG(*) FROM @p1)
-	SELECT myName FROM @p1 WHERE myName IS NOT NULL
->>>>>>> master
+	SELECT myId, myName FROM @p1 WHERE myName IS NOT NULL
 END
 
 GO
-

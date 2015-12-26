@@ -4,6 +4,8 @@ open System
 open System.Data
 open System.Data.SqlClient
 open System.Reflection
+open System.Configuration
+open System.Collections.Specialized
 
 open FSharp.Data.SqlClient
 
@@ -27,15 +29,6 @@ module Seq =
         | [| x |] -> Some x
         | _ -> invalidArg "source" "The input sequence contains more than one element."
 
-    let internal ofReader<'TItem> rowMapping (reader : SqlDataReader) = 
-        seq {
-            use _ = reader
-            while reader.Read() do
-                let values = Array.zeroCreate reader.FieldCount
-                reader.GetValues(values) |> ignore
-                yield values |> rowMapping |> unbox<'TItem>
-        }
-
 [<CompilerMessageAttribute("This API supports the FSharp.Data.SqlClient infrastructure and is not intended to be used directly from your code.", 101, IsHidden = true)>]
 [<RequireQualifiedAccess>]
 type ResultRank = 
@@ -57,6 +50,7 @@ type DesignTimeConfig = {
     Rank: ResultRank
     RowMapping: RowMapping
     ItemTypeName: string
+    ExpectedDataReaderColumns: (string * string)[]
 }
 
 [<CompilerMessageAttribute("This API supports the FSharp.Data.SqlClient infrastructure and is not intended to be used directly from your code.", 101, IsHidden = true)>]
@@ -90,6 +84,13 @@ type ``ISqlCommand Implementation``(cfg: DesignTimeConfig, connection, transacti
         |> Seq.reduce (|||) 
 
     let notImplemented _ : _ = raise <| NotImplementedException()
+
+    static let resultsetRuntimeVerification = 
+        lazy 
+            match ConfigurationManager.GetSection("FSharp.Data.SqlClient") with
+            | :? NameValueCollection as xs ->    
+                match xs.["ResultsetRuntimeVerification"] with | null -> false | s -> s.ToLower() = "true"
+            | _ -> false
 
     let execute, asyncExecute, executeSingle, asyncExecuteSingle = 
         match cfg.ResultType with
@@ -137,10 +138,10 @@ type ``ISqlCommand Implementation``(cfg: DesignTimeConfig, connection, transacti
 
     interface ISqlCommand with
 
-        member this.Execute parameters = execute(cmd, getReaderBehavior, parameters)
-        member this.AsyncExecute parameters = asyncExecute(cmd, getReaderBehavior, parameters)
-        member this.ExecuteSingle parameters = executeSingle(cmd, getReaderBehavior, parameters)
-        member this.AsyncExecuteSingle parameters = asyncExecuteSingle(cmd, getReaderBehavior, parameters)
+        member this.Execute parameters = execute(cmd, getReaderBehavior, parameters, cfg.ExpectedDataReaderColumns)
+        member this.AsyncExecute parameters = asyncExecute(cmd, getReaderBehavior, parameters, cfg.ExpectedDataReaderColumns)
+        member this.ExecuteSingle parameters = executeSingle(cmd, getReaderBehavior, parameters, cfg.ExpectedDataReaderColumns)
+        member this.AsyncExecuteSingle parameters = asyncExecuteSingle(cmd, getReaderBehavior, parameters, cfg.ExpectedDataReaderColumns)
 
         member this.ToTraceString parameters =  
             ``ISqlCommand Implementation``.SetParameters(cmd, parameters)
@@ -179,79 +180,111 @@ type ``ISqlCommand Implementation``(cfg: DesignTimeConfig, connection, transacti
             
             let p = cmd.Parameters.[name]            
 
-            if value = null 
+            if p.Direction.HasFlag(ParameterDirection.Input)
             then 
-                p.Value <- DBNull.Value 
-            else
-                if not( p.SqlDbType = SqlDbType.Structured)
+                if value = null 
                 then 
-                    p.Value <- value
+                    p.Value <- DBNull.Value 
                 else
-                    let table : DataTable = unbox p.Value
-                    table.Rows.Clear()
-                    for rowValues in unbox<seq<obj>> value do
-                        table.Rows.Add( rowValues :?> obj[]) |> ignore
-
-            if Convert.IsDBNull p.Value 
-            then 
-                match p.SqlDbType with
-                | SqlDbType.NVarChar -> p.Size <- 4000
-                | SqlDbType.VarChar -> p.Size <- 8000
-                | _ -> ()
+                    if not( p.SqlDbType = SqlDbType.Structured)
+                    then 
+                        p.Value <- value
+                    else
+                        let table : DataTable = unbox p.Value
+                        table.Rows.Clear()
+                        for rowValues in unbox<seq<obj>> value do
+                            table.Rows.Add( rowValues :?> obj[]) |> ignore
 
 //Execute/AsyncExecute versions
 
-    static member internal ExecuteReader(cmd, getReaderBehavior, parameters) = 
-        ``ISqlCommand Implementation``.SetParameters(cmd, parameters)
-        cmd.ExecuteReader( getReaderBehavior())
+    static member internal VerifyResultsetColumns(cursor: SqlDataReader, expected) = 
+        if resultsetRuntimeVerification.Value
+        then 
+            if cursor.FieldCount < Array.length expected
+            then 
+                let message = sprintf "Expected at least %i columns in result set but received only %i." expected.Length cursor.FieldCount
+                cursor.Close()
+                invalidOp message
 
-    static member internal AsyncExecuteReader(cmd, getReaderBehavior, parameters) = 
+            for i = 0 to expected.Length - 1 do
+                let expectedName, expectedType = fst expected.[i], Type.GetType( snd expected.[i], throwOnError = true)
+                let actualName, actualType = cursor.GetName( i), cursor.GetFieldType( i)
+                if actualName <> expectedName || actualType <> expectedType
+                then 
+                    let message = sprintf """Expected column [%s] of type "%A" at position %i (0-based indexing) but received column [%s] of type "%A".""" expectedName expectedType i actualName actualType
+                    cursor.Close()
+                    invalidOp message
+
+    static member internal ExecuteReader(cmd, getReaderBehavior, parameters, expectedDataReaderColumns) = 
         ``ISqlCommand Implementation``.SetParameters(cmd, parameters)
-        cmd.AsyncExecuteReader( getReaderBehavior())
+        let cursor = cmd.ExecuteReader( getReaderBehavior())
+        ``ISqlCommand Implementation``.VerifyResultsetColumns(cursor, expectedDataReaderColumns)
+        cursor
+
+    static member internal AsyncExecuteReader(cmd, getReaderBehavior, parameters, expectedDataReaderColumns) = 
+        async {
+            ``ISqlCommand Implementation``.SetParameters(cmd, parameters)
+            let! cursor = cmd.AsyncExecuteReader( getReaderBehavior())
+            ``ISqlCommand Implementation``.VerifyResultsetColumns(cursor, expectedDataReaderColumns)
+            return cursor
+        }
     
-    static member internal ExecuteDataTable(cmd, getReaderBehavior, parameters) = 
-        use cursor = ``ISqlCommand Implementation``.ExecuteReader(cmd, getReaderBehavior, parameters) 
+    static member internal ExecuteDataTable(cmd, getReaderBehavior, parameters, expectedDataReaderColumns) = 
+        use cursor = ``ISqlCommand Implementation``.ExecuteReader(cmd, getReaderBehavior, parameters, expectedDataReaderColumns) 
         let result = new FSharp.Data.DataTable<DataRow>(null, cmd)
         result.Load( cursor)
-
-        let hasOutputParameters = cmd.Parameters |> Seq.cast<SqlParameter> |> Seq.exists (fun x -> x.Direction.HasFlag( ParameterDirection.Output))
-
-        if hasOutputParameters
-        then
-            for i = 0 to parameters.Length - 1 do
-                let name, _ = parameters.[i]
-                let p = cmd.Parameters.[name]
-                if p.Direction = ParameterDirection.Output
-                then 
-                    parameters.[i] <- name, p.Value
         result
 
-    static member internal AsyncExecuteDataTable(cmd, getReaderBehavior, parameters) = 
+    static member internal AsyncExecuteDataTable(cmd, getReaderBehavior, parameters, expectedDataReaderColumns) = 
         async {
-            use! reader = ``ISqlCommand Implementation``.AsyncExecuteReader(cmd, getReaderBehavior, parameters) 
+            use! reader = ``ISqlCommand Implementation``.AsyncExecuteReader(cmd, getReaderBehavior, parameters, expectedDataReaderColumns) 
             let result = new FSharp.Data.DataTable<DataRow>(null, cmd)
             result.Load(reader)
             return result
         }
 
-    static member internal ExecuteSeq<'TItem> (rank, rowMapper) = fun(cmd, getReaderBehavior, parameters) -> 
-        let xs = ``ISqlCommand Implementation``.ExecuteReader(cmd, getReaderBehavior, parameters) |> Seq.ofReader<'TItem> rowMapper
+    static member internal ExecuteSeq<'TItem> (rank, rowMapper) = fun(cmd: SqlCommand, getReaderBehavior, parameters, expectedDataReaderColumns) -> 
+        let hasOutputParameters = cmd.Parameters |> Seq.cast<SqlParameter> |> Seq.exists (fun x -> x.Direction.HasFlag( ParameterDirection.Output))
 
-        if rank = ResultRank.SingleRow 
+        if not hasOutputParameters
         then 
-            xs |> Seq.toOption |> box
-        elif rank = ResultRank.ScalarValue 
-        then 
-            xs |> Seq.exactlyOne |> box
-        else 
-            assert (rank = ResultRank.Sequence)
-            box xs 
+            let xs = Seq.delay <| fun() -> 
+                ``ISqlCommand Implementation``
+                    .ExecuteReader(cmd, getReaderBehavior, parameters, expectedDataReaderColumns)
+                    .MapRowValues<'TItem>( rowMapper)
+
+            if rank = ResultRank.SingleRow 
+            then 
+                xs |> Seq.toOption |> box
+            elif rank = ResultRank.ScalarValue 
+            then 
+                xs |> Seq.exactlyOne |> box
+            else 
+                assert (rank = ResultRank.Sequence)
+                box xs 
+        else
+            let resultset = 
+                ``ISqlCommand Implementation``
+                    .ExecuteReader(cmd, getReaderBehavior, parameters, expectedDataReaderColumns)
+                    .MapRowValues<'TItem>( rowMapper)
+                    |> Seq.toList
+
+            if hasOutputParameters
+            then
+                for i = 0 to parameters.Length - 1 do
+                    let name, _ = parameters.[i]
+                    let p = cmd.Parameters.[name]
+                    if p.Direction.HasFlag( ParameterDirection.Output)
+                    then 
+                        parameters.[i] <- name, p.Value
+
+            box resultset
             
-    static member internal AsyncExecuteSeq<'TItem> (rank, rowMapper) = fun(cmd, getReaderBehavior, parameters) ->
+    static member internal AsyncExecuteSeq<'TItem> (rank, rowMapper) = fun(cmd, getReaderBehavior, parameters, expectedDataReaderColumns) ->
         let xs = 
             async {
-                let! reader = ``ISqlCommand Implementation``.AsyncExecuteReader(cmd, getReaderBehavior, parameters)
-                return reader |> Seq.ofReader<'TItem> rowMapper
+                let! reader = ``ISqlCommand Implementation``.AsyncExecuteReader(cmd, getReaderBehavior, parameters, expectedDataReaderColumns)
+                return reader.MapRowValues<'TItem>( rowMapper)
             }
 
         if rank = ResultRank.SingleRow
@@ -272,19 +305,19 @@ type ``ISqlCommand Implementation``(cfg: DesignTimeConfig, connection, transacti
             assert (rank = ResultRank.Sequence)
             box xs 
 
-    static member internal ExecuteNonQuery manageConnection (cmd, _, parameters) = 
+    static member internal ExecuteNonQuery manageConnection (cmd, _, parameters, _) = 
         ``ISqlCommand Implementation``.SetParameters(cmd, parameters)  
         use openedConnection = cmd.Connection.UseLocally(manageConnection )
         let recordsAffected = cmd.ExecuteNonQuery() 
         for i = 0 to parameters.Length - 1 do
             let name, _ = parameters.[i]
             let p = cmd.Parameters.[name]
-            if p.Direction = ParameterDirection.Output
+            if p.Direction.HasFlag( ParameterDirection.Output)
             then 
                 parameters.[i] <- name, p.Value
         recordsAffected
 
-    static member internal AsyncExecuteNonQuery manageConnection (cmd, _, parameters) = 
+    static member internal AsyncExecuteNonQuery manageConnection (cmd, _, parameters, _) = 
         ``ISqlCommand Implementation``.SetParameters(cmd, parameters)  
         async {         
             use _ = cmd.Connection.UseLocally(manageConnection )

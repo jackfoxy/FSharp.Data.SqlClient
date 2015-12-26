@@ -20,7 +20,7 @@ open FSharp.Data.SqlClient
 open ProviderImplementation.ProvidedTypes
 
 [<assembly:TypeProviderAssembly()>]
-[<assembly:InternalsVisibleTo("SqlClient.Tests")>]
+//[<assembly:InternalsVisibleTo("SqlClient.Tests")>]
 do()
 
 [<TypeProvider>]
@@ -61,7 +61,6 @@ type public SqlCommandProvider(config : TypeProviderConfig) as this =
                 let value = lazy this.CreateRootType(typeName, unbox args.[0], unbox args.[1], unbox args.[2], unbox args.[3], unbox args.[4], unbox args.[5], unbox args.[6], unbox args.[7])
                 cache.GetOrAdd(typeName, value)
             ) 
-            
         )
 
         providerType.AddXmlDoc """
@@ -77,6 +76,13 @@ type public SqlCommandProvider(config : TypeProviderConfig) as this =
 """
 
         this.AddNamespace(nameSpace, [ providerType ])
+
+    override this.ResolveAssembly args = 
+        config.ReferencedAssemblies 
+        |> Array.tryFind (fun x -> AssemblyName.ReferenceMatchesDefinition(AssemblyName.GetAssemblyName x, AssemblyName args.Name)) 
+        |> Option.map Assembly.LoadFrom
+        |> defaultArg 
+        <| base.ResolveAssembly args
 
     member internal this.CreateRootType(typeName, sqlStatementOrFile, connectionStringOrName: string, resultType, singleRow, configFile, allParametersOptional, resolutionFolder, dataDirectory) = 
 
@@ -126,7 +132,7 @@ type public SqlCommandProvider(config : TypeProviderConfig) as this =
             else []
 
         let rank = if singleRow then ResultRank.SingleRow else ResultRank.Sequence
-        let output = DesignTime.GetOutputTypes(outputColumns, resultType, rank)
+        let output = DesignTime.GetOutputTypes(outputColumns, resultType, rank, hasOutputParameters = false)
         
         let cmdProvidedType = ProvidedTypeDefinition(assembly, nameSpace, typeName, Some typeof<``ISqlCommand Implementation``>, HideObjectMethods = true)
 
@@ -138,6 +144,12 @@ type public SqlCommandProvider(config : TypeProviderConfig) as this =
 
         do  //ctors
             let designTimeConfig = 
+                let expectedDataReaderColumns = 
+                    Expr.NewArray(
+                        typeof<string * string>, 
+                        [ for c in outputColumns -> Expr.NewTuple [ Expr.Value c.Name; Expr.Value c.TypeInfo.ClrTypeFullName ] ]
+                    )
+
                 <@@ {
                     ConnectionString = %%connectionString.Expr
                     SqlStatement = sqlStatement
@@ -147,6 +159,7 @@ type public SqlCommandProvider(config : TypeProviderConfig) as this =
                     Rank = rank
                     RowMapping = %%output.RowMapping
                     ItemTypeName = %%Expr.Value( output.ErasedToRowType.PartialAssemblyQualifiedName)
+                    ExpectedDataReaderColumns = %%expectedDataReaderColumns
                 } @@>
 
             do 

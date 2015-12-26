@@ -8,19 +8,20 @@ open System.Data
 open FSharp.Data
 open Xunit
 
+open ProgrammabilityTest
+
 //Tables types structured as: [TypeAlias].[Namespace].Tables.[TableName]
 type ShiftTable = AdventureWorks.HumanResources.Tables.Shift
 type ProductCostHistory = AdventureWorks.Production.Tables.ProductCostHistory
 
 type GetRowCount = SqlCommandProvider<"SELECT COUNT(*) FROM HumanResources.Shift", ConnectionStrings.AdventureWorksNamed, SingleRow = true>
+type GetShiftTableData = SqlCommandProvider<"SELECT * FROM HumanResources.Shift", ConnectionStrings.AdventureWorksNamed, ResultType.DataReader>
 
 type DataTablesTests() = 
 
     do
         use cmd = new SqlCommandProvider<"DBCC CHECKIDENT ('HumanResources.Shift', RESEED, 4)", ConnectionStrings.AdventureWorksNamed>()
         cmd.Execute() |> ignore
-
-    let getShiftTableData = AdventureWorks.CreateCommand<"SELECT * FROM HumanResources.Shift", ResultType.DataReader>()
 
     let adventureWorks = FSharp.Configuration.AppSettings<"app.config">.ConnectionStrings.AdventureWorks
     
@@ -157,7 +158,7 @@ type DataTablesTests() =
         use tran = new TransactionScope()
             
         let t = new ShiftTable()
-
+        use getShiftTableData = new GetShiftTableData()
         getShiftTableData.Execute() |> t.Load
 
         let eveningShift = t.Rows |> Seq.find (fun row -> row.Name = "Evening")
@@ -173,11 +174,14 @@ type DataTablesTests() =
         Assert.Equal(finishBy10, eveningShiftIinDb.EndTime)
 
     [<Fact>]
+    member __.TableTypeTag() = 
+        Assert.Equal<string>(ConnectionStrings.AdventureWorksNamed, GetShiftTableData.ConnectionStringOrName)
+
+    [<Fact>]
     member __.NullableDateTimeColumn() = 
 
         let table = new ProductCostHistory()
-        use cmd = AdventureWorks.CreateCommand<"SELECT * FROM Production.ProductCostHistory WHERE EndDate IS NOT NULL", ResultType.DataReader>()
-
+        use cmd = new SqlCommandProvider<"SELECT * FROM Production.ProductCostHistory WHERE EndDate IS NOT NULL", ConnectionStrings.AdventureWorksNamed, ResultType.DataReader>()
         cmd.Execute() |> table.Load
         
         Assert.NotEmpty(table.Rows)
@@ -194,7 +198,8 @@ type DataTablesTests() =
 
     [<Fact>]
     member __.SqlCommandTableInsert() = 
-        use cmd = AdventureWorks.CreateCommand<"SELECT Name, StartTime, EndTime FROM HumanResources.Shift", ResultType.DataTable>()
+        use cmd = 
+            new SqlCommandProvider<"SELECT Name, StartTime, EndTime FROM HumanResources.Shift", ConnectionStrings.AdventureWorksNamed, ResultType.DataTable>()
         let t = cmd.Execute()
         use conn = new SqlConnection(connectionString = adventureWorks)
         conn.Open()
@@ -210,7 +215,8 @@ type DataTablesTests() =
 
     [<Fact>]
     member __.SqlCommandTableUpdate() = 
-        use cmd = AdventureWorks.CreateCommand<"SELECT ShiftID, Name, StartTime, EndTime, ModifiedDate FROM HumanResources.Shift", ResultType.DataTable>()
+        use cmd = 
+            new SqlCommandProvider<"SELECT ShiftID, Name, StartTime, EndTime, ModifiedDate FROM HumanResources.Shift", ConnectionStrings.AdventureWorksNamed, ResultType.DataTable>()
         let t = cmd.Execute()
         use conn = new SqlConnection(connectionString = adventureWorks)
         conn.Open()
@@ -248,6 +254,7 @@ type DataTablesTests() =
         finally
             //compenstating tran
             let t2 = new ShiftTable()
+            use getShiftTableData = new GetShiftTableData()
             getShiftTableData.Execute() |> t2.Load
             for r in t2.Rows do
                 if r.Name = "French coffee break" || r.Name = "Spanish siesta"
@@ -261,4 +268,4 @@ type DataTablesTests() =
         use tran = new TransactionScope()
         let t = new AdventureWorks.dbo.Tables.TableHavingColumnNamesWithSpaces()
         t.AddRow()
-        t.Update()
+        Assert.Equal(1, t.Update())

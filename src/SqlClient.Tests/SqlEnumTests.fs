@@ -2,7 +2,8 @@
 
 open System
 open Xunit
-    
+open FSharp.Data.ProgrammabilityTest
+
 type EnumMapping = SqlEnum<"SELECT * FROM (VALUES(('One'), 1), ('Two', 2)) AS T(Tag, Value)", ConnectionStrings.LocalHost, CLIEnum = true>
 
 [<Literal>]
@@ -49,3 +50,21 @@ let SingleColumn() =
     let items = SingleColumnSelect.Items
     Assert.Equal<_ seq>(all, items)
 
+[<Fact>]
+let PatternMatchingOn() =
+    let actual = 
+        SingleColumnSelect.Items
+        |> Seq.choose (fun (tag, value) ->
+            match value with
+            | SingleColumnSelect.``CARGO TRANSPORT 5`` 
+            | SingleColumnSelect.``OVERNIGHT J-FAST``
+            | SingleColumnSelect.``OVERSEAS - DELUXE``
+            | SingleColumnSelect.``XRQ - TRUCK GROUND``
+            | SingleColumnSelect.``ZY - EXPRESS`` -> Some tag
+            | _ -> None
+        ) 
+
+    Assert.Equal<_ seq>(
+        SingleColumnSelect.Items |> Seq.map fst,
+        actual
+    )    

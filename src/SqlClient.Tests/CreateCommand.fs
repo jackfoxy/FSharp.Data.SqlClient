@@ -2,7 +2,7 @@
 
 open Xunit
 
-type DB = AdventureWorks
+type DB = FSharp.Data.ProgrammabilityTest.AdventureWorks
 
 [<Fact>]
 let getSingleRowNoParams() = 
