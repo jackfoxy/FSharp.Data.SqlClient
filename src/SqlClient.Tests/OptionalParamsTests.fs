@@ -5,7 +5,7 @@ open Xunit
 let connection = ConnectionStrings.AdventureWorksNamed
 
 type QueryWithNullableParam = 
-    SqlCommandProvider<"SELECT CAST(@x AS INT) + ISNULL(CAST(@y AS INT), 1)", connection, SingleRow = true, AllParametersOptional = true>
+    SqlCommand<"SELECT CAST(@x AS INT) + ISNULL(CAST(@y AS INT), 1)", connection, SingleRow = true, AllParametersOptional = true>
 
 [<Fact>]
 let BothOptinalParamsSupplied() = 
@@ -19,7 +19,7 @@ let SkipYParam() =
 
 [<Fact>]
 let NullableStringInputParameter() = 
-    use cmd = new SqlCommandProvider<"select ISNULL(CAST(@P1 AS VARCHAR), '')", connection, SingleRow = true, AllParametersOptional = true>()
+    use cmd = new SqlCommand<"select ISNULL(CAST(@P1 AS VARCHAR), '')", connection, SingleRow = true, AllParametersOptional = true>()
 
     Assert.Equal(
         expected = Some "",
@@ -38,7 +38,7 @@ let NullableStringInputParameter() =
 
 [<Fact>]
 let NullableStringInputMandatoryParameter() = 
-    use cmd = new SqlCommandProvider<"select ISNULL(CAST(@P1 AS VARCHAR), '')", connection, SingleRow = true>()
+    use cmd = new SqlCommand<"select ISNULL(CAST(@P1 AS VARCHAR), '')", connection, SingleRow = true>()
     Assert.Equal(
         expected = Some "",
         actual = cmd.Execute( null)

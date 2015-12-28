@@ -19,7 +19,7 @@ type DataTablesTests() =
     let getShiftTableData = AdventureWorks.CreateCommand<"SELECT * FROM HumanResources.Shift", ResultType.DataReader, TypeName = "GetShiftTableData">()
 
     do
-        use cmd = new SqlCommandProvider<"DBCC CHECKIDENT ('HumanResources.Shift', RESEED, 4)", ConnectionStrings.AdventureWorksNamed>()
+        use cmd = new SqlCommand<"DBCC CHECKIDENT ('HumanResources.Shift', RESEED, 4)", ConnectionStrings.AdventureWorksNamed>()
         cmd.Execute() |> ignore
 
     let adventureWorks = FSharp.Configuration.AppSettings<"app.config">.ConnectionStrings.AdventureWorks
@@ -76,7 +76,7 @@ type DataTablesTests() =
             Assert.Equal(t.Rows.Count, rowsAdded)
         finally
             //compenstating tran
-            use cmd = new SqlCommandProvider<"
+            use cmd = new SqlCommand<"
                 DELETE FROM HumanResources.Shift WHERE Name IN ('French coffee break', 'Spanish siesta')
             ", ConnectionStrings.AdventureWorksNamed>()
             cmd.Execute() |> ignore
@@ -139,7 +139,7 @@ type DataTablesTests() =
         //removing ModifiedDate column is not required as oppose to bulk insert 
         let rowsInserted = t.Update(conn, tran)
         let latestIdentity = 
-            use cmd = new SqlCommandProvider<"SELECT IDENT_CURRENT (@tableName)", ConnectionStrings.AdventureWorksNamed, SingleRow = true>()
+            use cmd = new SqlCommand<"SELECT IDENT_CURRENT (@tableName)", ConnectionStrings.AdventureWorksNamed, SingleRow = true>()
             cmd.Execute( t.TableName) |> Option.get |> Option.get |> Convert.ToByte
 
         Assert.Equal(t.Rows.Count, rowsInserted)
@@ -151,7 +151,7 @@ type DataTablesTests() =
         //default values
         Assert.Equal(t.Rows.[1].ModifiedDate, yesterday)
         let serverDate = //because Azure in UTC
-            use cmd = new SqlCommandProvider<"SELECT GetDate()", ConnectionStrings.AdventureWorksNamed, SingleRow = true>()
+            use cmd = new SqlCommand<"SELECT GetDate()", ConnectionStrings.AdventureWorksNamed, SingleRow = true>()
             cmd.Execute().Value
         Assert.Equal(t.Rows.[0].ModifiedDate.Date, serverDate.Date)
 
@@ -171,7 +171,7 @@ type DataTablesTests() =
         let rowsUpdated = t.Update()
         Assert.Equal(1, rowsUpdated)
 
-        use getShift = new SqlCommandProvider<"SELECT * FROM HumanResources.Shift", ConnectionStrings.AdventureWorksNamed>()
+        use getShift = new SqlCommand<"SELECT * FROM HumanResources.Shift", ConnectionStrings.AdventureWorksNamed>()
         let eveningShiftIinDb = getShift.Execute() |> Seq.find (fun x -> x.Name = "Evening")
         Assert.Equal(finishBy10, eveningShiftIinDb.EndTime)
 

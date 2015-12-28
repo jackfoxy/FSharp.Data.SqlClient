@@ -3,9 +3,9 @@
 open System
 open System.Data
 open System.Transactions
-open System.Data.SqlClient
-
 open Xunit
+
+type SqlConnection = System.Data.SqlClient.SqlConnection
 
 open FSharp.Data.TypeProviderTest
 open FSharp.Data.SqlClient
@@ -77,7 +77,7 @@ let local() =
     tran.Rollback()
     Assert.Equal(0, (new GetBitCoin()).Execute(bitCoinCode) |> Seq.length)
 
-type RaiseError = SqlCommandProvider<"SELECT 42; THROW 51000, 'Error raised.', 1 ", ConnectionStrings.AdventureWorksNamed>
+type RaiseError = SqlCommand<"SELECT 42; THROW 51000, 'Error raised.', 1 ", ConnectionStrings.AdventureWorksNamed>
 
 [<Fact>]
 let notCloseExternalConnInCaseOfError() =
@@ -103,10 +103,10 @@ let notCloseExternalConnInCaseOfError2() =
 [<Fact>]
 let donNotOpenConnectionOnObject() =
     use conn = new SqlConnection(ConnectionStrings.AdventureWorks)
-    use cmd = new SqlCommandProvider<"SELECT 42", ConnectionStrings.AdventureWorksNamed>(conn)
+    use cmd = new SqlCommand<"SELECT 42", ConnectionStrings.AdventureWorksNamed>(conn)
     Assert.Throws<InvalidOperationException>(fun() -> cmd.Execute() |> Seq.toArray |> ignore)    
 
-type NonQuery = SqlCommandProvider<"DBCC CHECKIDENT ('HumanResources.Shift', RESEED, 4)", ConnectionStrings.AdventureWorksNamed>
+type NonQuery = SqlCommand<"DBCC CHECKIDENT ('HumanResources.Shift', RESEED, 4)", ConnectionStrings.AdventureWorksNamed>
 
 [<Fact>]
 let doNotOpenConnectionOnObjectForNonQuery() =
@@ -122,7 +122,7 @@ let doNotOpenConnectionOnObjectForAsyncNonQuery() =
     
 [<Fact>]
 let prematurelyOpenConnection() =
-    let cmd = new SqlCommandProvider<"SELECT 42", ConnectionStrings.AdventureWorksNamed>() 
+    let cmd = new SqlCommand<"SELECT 42", ConnectionStrings.AdventureWorksNamed>() 
     let _ = cmd.Execute()
 
     Assert.Equal(

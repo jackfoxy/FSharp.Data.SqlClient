@@ -2,10 +2,10 @@ module FSharp.Data.TypeProviderTest
 
 open System
 open System.Data
-open System.Data.SqlClient
 open Xunit
+type SqlConnection = System.Data.SqlClient.SqlConnection
 
-type GetEvenNumbers = SqlCommandProvider<"select * from (values (2), (4), (8), (24)) as T(value)", ConnectionStrings.AdventureWorksNamed>
+type GetEvenNumbers = SqlCommand<"select * from (values (2), (4), (8), (24)) as T(value)", ConnectionStrings.AdventureWorksNamed>
 
 [<Fact>]
 let asyncSinlgeColumn() = 
@@ -14,7 +14,7 @@ let asyncSinlgeColumn() =
 
 [<Fact>]
 let emptyResultset() = 
-    use cmd = new SqlCommandProvider<"SELECT 42 WHERE 0 > 1", ConnectionStrings.AdventureWorksNamed>()
+    use cmd = new SqlCommand<"SELECT 42 WHERE 0 > 1", ConnectionStrings.AdventureWorksNamed>()
     Assert.Equal<_ []>( Array.empty, cmd.Execute() |> Seq.toArray)    
 
 [<Fact>]
@@ -40,18 +40,18 @@ let ExternalInstanceConnection() =
 
 [<Fact>]
 let TinyIntConversion() = 
-    use cmd = new SqlCommandProvider<"SELECT CAST(10 AS TINYINT) AS Value", ConnectionStrings.AdventureWorksNamed, SingleRow = true>()
+    use cmd = new SqlCommand<"SELECT CAST(10 AS TINYINT) AS Value", ConnectionStrings.AdventureWorksNamed, SingleRow = true>()
     Assert.Equal(Some 10uy, cmd.Execute().Value)    
 
 [<Fact>]
 let ConditionalQuery() = 
-    use cmd = new SqlCommandProvider<"IF @flag = 0 SELECT _1=1, _2='monkey' ELSE SELECT _1=2, _2='donkey'", ConnectionStrings.AdventureWorksNamed, SingleRow = true>()
+    use cmd = new SqlCommand<"IF @flag = 0 SELECT _1=1, _2='monkey' ELSE SELECT _1=2, _2='donkey'", ConnectionStrings.AdventureWorksNamed, SingleRow = true>()
     Assert.Equal(Some(1, "monkey"), cmd.Execute(flag = 0) |> Option.map (fun x -> x._1, x._2))    
     Assert.Equal(Some(2, "donkey"), cmd.Execute(flag = 1) |> Option.map (fun x -> x._1, x._2))    
 
 [<Fact>]
 let columnsShouldNotBeNull2() = 
-    use cmd = new SqlCommandProvider<"
+    use cmd = new SqlCommand<"
         SELECT COLUMN_NAME, IS_NULLABLE, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH, NUMERIC_PRECISION
         FROM INFORMATION_SCHEMA.COLUMNS
         WHERE TABLE_NAME = 'DatabaseLog' and numeric_precision is null
@@ -68,9 +68,9 @@ let bitCoinCode = "BTC"
 [<Literal>]
 let bitCoinName = "Bitcoin"
 
-type DeleteBitCoin = SqlCommandProvider<"DELETE FROM Sales.Currency WHERE CurrencyCode = @Code", ConnectionStrings.AdventureWorksNamed>
-type InsertBitCoin = SqlCommandProvider<"INSERT INTO Sales.Currency VALUES(@Code, @Name, GETDATE())", ConnectionStrings.AdventureWorksNamed>
-type GetBitCoin = SqlCommandProvider<"SELECT CurrencyCode, Name FROM Sales.Currency WHERE CurrencyCode = @code", ConnectionStrings.AdventureWorksNamed>
+type DeleteBitCoin = SqlCommand<"DELETE FROM Sales.Currency WHERE CurrencyCode = @Code", ConnectionStrings.AdventureWorksNamed>
+type InsertBitCoin = SqlCommand<"INSERT INTO Sales.Currency VALUES(@Code, @Name, GETDATE())", ConnectionStrings.AdventureWorksNamed>
+type GetBitCoin = SqlCommand<"SELECT CurrencyCode, Name FROM Sales.Currency WHERE CurrencyCode = @code", ConnectionStrings.AdventureWorksNamed>
 
 [<Fact>]
 let asyncCustomRecord() =
@@ -82,10 +82,10 @@ let asyncCustomRecord() =
 
 [<Fact>]
 let singleRowOption() =
-    use noneSingleton = new SqlCommandProvider<"select 1 where 1 = 0", ConnectionStrings.AdventureWorksNamed, SingleRow = true>()
+    use noneSingleton = new SqlCommand<"select 1 where 1 = 0", ConnectionStrings.AdventureWorksNamed, SingleRow = true>()
     Assert.IsNone <| noneSingleton.Execute()
 
-    use someSingleton = new SqlCommandProvider<"select 1", ConnectionStrings.AdventureWorksNamed, SingleRow = true>()
+    use someSingleton = new SqlCommand<"select 1", ConnectionStrings.AdventureWorksNamed, SingleRow = true>()
     Assert.Equal( Some 1, someSingleton.AsyncExecute() |> Async.RunSynchronously)
 
 [<Fact>]
@@ -93,7 +93,7 @@ let ToTraceString() =
     let now = DateTime.Now
     let num = 42
     let expected = sprintf "exec sp_executesql N'SELECT CAST(@Date AS DATE) AS _1, CAST(@Number AS INT) AS _2',N'@Date Date,@Number Int',@Date='%A',@Number='%d'" now num
-    let cmd = new SqlCommandProvider<"SELECT CAST(@Date AS DATE) AS _1, CAST(@Number AS INT) AS _2", ConnectionStrings.AdventureWorksNamed>()
+    let cmd = new SqlCommand<"SELECT CAST(@Date AS DATE) AS _1, CAST(@Number AS INT) AS _2", ConnectionStrings.AdventureWorksNamed>()
     Assert.Equal<string>(
         expected, 
         actual = cmd.ToTraceString( now, num)
@@ -119,7 +119,7 @@ let ``ToTraceString for CRUD``() =
     
 [<Fact>]
 let ``ToTraceString double-quotes``() =    
-    use cmd = new SqlCommandProvider<"SELECT OBJECT_ID('Sales.Currency')", ConnectionStrings.AdventureWorksNamed>()
+    use cmd = new SqlCommand<"SELECT OBJECT_ID('Sales.Currency')", ConnectionStrings.AdventureWorksNamed>()
     let trace = cmd.ToTraceString()
     Assert.Equal<string>("exec sp_executesql N'SELECT OBJECT_ID(''Sales.Currency'')'", trace)
 
@@ -128,13 +128,13 @@ let ``ToTraceString double-quotes``() =
     )>]
 let CommandTimeout() =
     use cmd = 
-        new SqlCommandProvider<"WAITFOR DELAY '00:00:06'; SELECT 42", ConnectionStrings.AdventureWorksNamed, SingleRow = true>(commandTimeout = 60)
+        new SqlCommand<"WAITFOR DELAY '00:00:06'; SELECT 42", ConnectionStrings.AdventureWorksNamed, SingleRow = true>(commandTimeout = 60)
     Assert.Equal(60, cmd.CommandTimeout)
     Assert.Equal(Some 42, cmd.Execute())     
 
 [<Fact>]
 let DynamicSql() =    
-    let cmd = new SqlCommandProvider<"
+    let cmd = new SqlCommand<"
 	    DECLARE @stmt AS NVARCHAR(MAX) = @tsql
 	    DECLARE @params AS NVARCHAR(MAX) = N'@p1 nvarchar(100)'
 	    DECLARE @p1 AS NVARCHAR(100) = @firstName
@@ -165,7 +165,7 @@ let DynamicSql() =
 
 [<Fact>]
 let DeleteStatement() =    
-    use cmd = new SqlCommandProvider<"
+    use cmd = new SqlCommand<"
         DECLARE @myTable TABLE( id INT)
         INSERT INTO @myTable VALUES (42)
         DELETE FROM @myTable
@@ -175,7 +175,7 @@ let DeleteStatement() =
 [<Fact>]
 let ``Setting the command timeout isn't overridden when giving ConnectionStrings.AdventureWorksNamed context``() =
     let customTimeout = (Random()).Next(512, 1024)
-    let getDate = new SqlCommandProvider<"select getdate()", ConnectionStrings.AdventureWorksNamed>(commandTimeout = customTimeout)
+    let getDate = new SqlCommand<"select getdate()", ConnectionStrings.AdventureWorksNamed>(commandTimeout = customTimeout)
     Assert.Equal(customTimeout, getDate.CommandTimeout)
     let sqlCommand = (getDate :> ISqlCommand).Raw
     Assert.Equal(customTimeout, sqlCommand.CommandTimeout)
@@ -193,7 +193,7 @@ let tableTypeTag() =
 
 [<Fact>]
 let ResultsetExtendedWithTrailingColumn() =
-    let cmd = new SqlCommandProvider<"
+    let cmd = new SqlCommand<"
         WITH XS AS
         (
 	        SELECT 
@@ -228,7 +228,7 @@ let resultsetRuntimeVerificationEnabled =
 
 [<Fact>]
 let ResultsetRuntimeVerificationLessThanExpectedColumns() =
-    let cmd = new SqlCommandProvider<"
+    let cmd = new SqlCommand<"
         WITH XS AS
         (
 	        SELECT 
@@ -268,7 +268,7 @@ let ResultsetRuntimeVerificationLessThanExpectedColumns() =
 
 [<Fact>]
 let ResultsetRuntimeVerificationDiffColumnTypes() =
-    let cmd = new SqlCommandProvider<"
+    let cmd = new SqlCommand<"
         WITH XS AS
         (
 	        SELECT 
@@ -309,7 +309,7 @@ let ResultsetRuntimeVerificationDiffColumnTypes() =
 module ``The undeclared parameter 'X' is used more than once in the batch being analyzed`` = 
     [<Fact>]
     let Basic() =
-        use cmd = new SqlCommandProvider<"
+        use cmd = new SqlCommand<"
             SELECT * 
             FROM HumanResources.Shift 
             WHERE 
@@ -321,7 +321,7 @@ module ``The undeclared parameter 'X' is used more than once in the batch being 
 
     [<Fact>]
     let WithBoundDeclaration() =
-        use cmd = new SqlCommandProvider<"
+        use cmd = new SqlCommand<"
             DECLARE @x AS INT = 42; --make bound vars handled properly
 
             SELECT * 
@@ -335,7 +335,7 @@ module ``The undeclared parameter 'X' is used more than once in the batch being 
 
     [<Fact>]
     let WithUnboundDeclaration() =
-        use cmd = new SqlCommandProvider<"
+        use cmd = new SqlCommand<"
             DECLARE @x AS INT; --make bound vars handled properly
             SELECT * 
             FROM HumanResources.Shift 
@@ -348,7 +348,7 @@ module ``The undeclared parameter 'X' is used more than once in the batch being 
 
     [<Fact>]
     let DynamicFiltering() =
-        use cmd = new SqlCommandProvider<"
+        use cmd = new SqlCommand<"
             SELECT * 
             FROM HumanResources.Shift 
             WHERE CAST(@time AS TIME) IS NULL OR @time BETWEEN StartTime AND EndTime

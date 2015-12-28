@@ -4,7 +4,7 @@ open FSharp.Data
 open Xunit
 
 // If compile fails here, check prereqs.sql
-type TableValuedTuple = SqlCommandProvider<"exec Person.myProc @x", ConnectionStrings.AdventureWorksNamed, SingleRow = true>
+type TableValuedTuple = SqlCommand<"exec Person.myProc @x", ConnectionStrings.AdventureWorksNamed, SingleRow = true>
 type MyTableType = TableValuedTuple.MyTableType
 
 [<Fact>]
@@ -39,7 +39,7 @@ let NullableColumn() =
     let result = cmd.Execute(x = p) |> Option.map(fun x -> x.myId, x.myName)
     Assert.Equal(Some(1, None), result)    
 
-type TableValuedSingle = SqlCommandProvider<"exec SingleElementProc @x", ConnectionStringOrName = ConnectionStrings.AdventureWorksNamed>
+type TableValuedSingle = SqlCommand<"exec SingleElementProc @x", ConnectionStringOrName = ConnectionStrings.AdventureWorksNamed>
 
 [<Fact>]
 let SingleColumn() = 
@@ -62,7 +62,7 @@ let tvpSqlParamCleanUp() =
     let result = cmd.Execute(x = p) |> List.ofSeq
     Assert.Equal<int list>([1;2], result)    
 
-type TableValuedSprocTuple = SqlCommandProvider<"exec Person.myProc @x", ConnectionStringOrName = ConnectionStrings.AdventureWorksNamed, SingleRow = true>
+type TableValuedSprocTuple = SqlCommand<"exec Person.myProc @x", ConnectionStringOrName = ConnectionStrings.AdventureWorksNamed, SingleRow = true>
 
 [<Fact>]
 let SprocTupleValue() = 
@@ -74,7 +74,7 @@ let SprocTupleValue() =
     let actual = cmd.Execute(p) |> Option.map (fun x -> x.myId, x.myName)
     Assert.Equal( Some( 1, Some "monkey"), actual)    
 
-type TableValuedTupleWithOptionalParams = SqlCommandProvider<"exec Person.myProc @x", ConnectionStrings.AdventureWorksNamed, AllParametersOptional = true>
+type TableValuedTupleWithOptionalParams = SqlCommand<"exec Person.myProc @x", ConnectionStrings.AdventureWorksNamed, AllParametersOptional = true>
 [<Fact>]
 let TableValuedTupleWithOptionalParams() = 
     let cmd = new TableValuedTupleWithOptionalParams()
@@ -86,7 +86,7 @@ The error: Value cannot be null.	C:\Users\mitekm\Documents\GitHub\FSharp.Data.Sq
 *)
    
 
-type MyFunc = SqlCommandProvider<"select * from dbo.MyFunc(@x, @y)", ConnectionStrings.AdventureWorksNamed>
+type MyFunc = SqlCommand<"select * from dbo.MyFunc(@x, @y)", ConnectionStrings.AdventureWorksNamed>
 
 [<Fact>]
 let TwoTVPParameterOfSameUDTT() = 
