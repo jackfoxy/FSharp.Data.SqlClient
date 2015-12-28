@@ -131,7 +131,7 @@ type public SqlClientProvider(config: TypeProviderConfig) as this =
 
         let commands = ProvidedTypeDefinition( "Commands", None)
         databaseRootType.AddMember commands
-        this.AddCreateCommandMethod(conn, connectionString, databaseRootType, udttsPerSchema, commands)
+        this.AddCreateCommandMethod(conn, connectionString, databaseRootType, udttsPerSchema, commands, connectionStringOrName)
 
         databaseRootType           
 
@@ -519,7 +519,7 @@ type public SqlClientProvider(config: TypeProviderConfig) as this =
             )
         tables
 
-    member internal this.AddCreateCommandMethod(conn, connectionString, rootType: ProvidedTypeDefinition, udttsPerSchema, commands: ProvidedTypeDefinition) = 
+    member internal this.AddCreateCommandMethod(conn, connectionString, rootType: ProvidedTypeDefinition, udttsPerSchema, commands: ProvidedTypeDefinition, tag) = 
         let staticParams = [
             ProvidedStaticParameter("CommandText", typeof<string>) 
             ProvidedStaticParameter("ResultType", typeof<ResultType>, ResultType.Records) 
@@ -550,6 +550,9 @@ type public SqlClientProvider(config: TypeProviderConfig) as this =
 
             let commandTypeName = if typename <> "" then typename else methodName.Replace("=", "").Replace("@", "")
             let cmdProvidedType = ProvidedTypeDefinition(commandTypeName, Some typeof<``ISqlCommand Implementation``>, HideObjectMethods = true)
+
+            do  
+                cmdProvidedType.AddMember(ProvidedProperty("ConnectionStringOrName", typeof<string>, [], IsStatic = true, GetterCode = fun _ -> <@@ tag @@>))
 
             do  //AsyncExecute, Execute, and ToTraceString
 
