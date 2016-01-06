@@ -12,9 +12,10 @@ let asyncSinlgeColumn() =
     use cmd = new GetEvenNumbers()
     Assert.Equal<int[]>([| 2; 4; 8; 24 |], cmd.AsyncExecute() |> Async.RunSynchronously |> Seq.toArray)    
 
+type EmptyResultset = SqlCommand<"SELECT 42 WHERE 0 > 1", ConnectionStrings.AdventureWorksNamed>
 [<Fact>]
 let emptyResultset() = 
-    use cmd = new SqlCommand<"SELECT 42 WHERE 0 > 1", ConnectionStrings.AdventureWorksNamed>()
+    use cmd = new EmptyResultset()
     Assert.Equal<_ []>( Array.empty, cmd.Execute() |> Seq.toArray)    
 
 [<Fact>]
@@ -37,15 +38,18 @@ let ExternalInstanceConnection() =
     Assert.Equal<int[]>([| 2; 4; 8;  24 |], cmd.Execute() |> Seq.toArray)    
     Assert.Equal(ConnectionState.Open, underlyingConnection.State)
 
+type TinyIntConversion = SqlCommand<"SELECT CAST(10 AS TINYINT) AS Value", ConnectionStrings.AdventureWorksNamed, SingleRow = true>
 
 [<Fact>]
-let TinyIntConversion() = 
-    use cmd = new SqlCommand<"SELECT CAST(10 AS TINYINT) AS Value", ConnectionStrings.AdventureWorksNamed, SingleRow = true>()
+let tinyIntConversion() = 
+    use cmd = new TinyIntConversion()
     Assert.Equal(Some 10uy, cmd.Execute().Value)    
+
+type ConditionalQuery = SqlCommand<"IF @flag = 0 SELECT _1=1, _2='monkey' ELSE SELECT _1=2, _2='donkey'", ConnectionStrings.AdventureWorksNamed, SingleRow = true>
 
 [<Fact>]
 let ConditionalQuery() = 
-    use cmd = new SqlCommand<"IF @flag = 0 SELECT _1=1, _2='monkey' ELSE SELECT _1=2, _2='donkey'", ConnectionStrings.AdventureWorksNamed, SingleRow = true>()
+    use cmd = new ConditionalQuery()
     Assert.Equal(Some(1, "monkey"), cmd.Execute(flag = 0) |> Option.map (fun x -> x._1, x._2))    
     Assert.Equal(Some(2, "donkey"), cmd.Execute(flag = 1) |> Option.map (fun x -> x._1, x._2))    
 

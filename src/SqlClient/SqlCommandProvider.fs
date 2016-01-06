@@ -31,9 +31,19 @@ type public SqlCommandProvider(config : TypeProviderConfig) as this =
 
     let nameSpace = this.GetType().Namespace
     let assembly = Assembly.LoadFrom( config.RuntimeAssembly)
-    let providerType = ProvidedTypeDefinition(assembly, nameSpace, "SqlCommand", Some typeof<obj>, HideObjectMethods = true)
+    let providerType = ProvidedTypeDefinition(assembly, nameSpace, "SqlCommand", Some typeof<obj>, HideObjectMethods = true, IsErased = false)
 
     let cache = new MemoryCache(name = this.GetType().Name)
+
+    let getProvidedAssembly() = 
+        let assemblyFileName = Path.ChangeExtension( Path.GetTempFileName(), "dll")
+        ProvidedAssembly( assemblyFileName)
+
+    let addToProvidedTempAssembly types = 
+        getProvidedAssembly().AddTypes types
+
+    do
+        addToProvidedTempAssembly [ providerType ]
 
     do 
         this.Disposing.Add <| fun _ ->
@@ -126,13 +136,17 @@ type public SqlCommandProvider(config : TypeProviderConfig) as this =
         let rank = if singleRow then ResultRank.SingleRow else ResultRank.Sequence
         let output = DesignTime.GetOutputTypes(outputColumns, ResultType.Records, rank, hasOutputParameters = false)
         
-        let cmdProvidedType = ProvidedTypeDefinition(assembly, nameSpace, typeName, Some typeof<``ISqlCommand Implementation``>, HideObjectMethods = true)
+        let cmdProvidedType = ProvidedTypeDefinition(assembly, nameSpace, typeName, Some typeof<``ISqlCommand Implementation``>, HideObjectMethods = true, IsErased = false)
 
         do  
             cmdProvidedType.AddMember(ProvidedProperty("ConnectionStringOrName", typeof<string>, [], IsStatic = true, GetterCode = fun _ -> <@@ connectionStringOrName @@>))
 
         do  //Record
-            output.ProvidedRowType |> Option.iter cmdProvidedType.AddMember
+            output.ProvidedRowType 
+            |> Option.iter (fun rowType -> 
+                rowType.IsErased <- false 
+                cmdProvidedType.AddMember rowType
+            )
 
         do  //ctors
             let designTimeConfig = 
@@ -155,11 +169,12 @@ type public SqlCommandProvider(config : TypeProviderConfig) as this =
                 } @@>
 
             do 
-                let impl = typeof<``ISqlCommand Implementation``>.GetConstructor( [| typeof<DesignTimeConfig>; typeof<string> |])
                 let parameters = [ ProvidedParameter("connectionString", typeof<string>) ]
-                let body args = Expr.NewObject(impl, designTimeConfig :: args )
-                cmdProvidedType.AddMember <| ProvidedConstructor(parameters, InvokeCode = body)
-                cmdProvidedType.AddMember <| ProvidedMethod("Create", parameters, returnType = cmdProvidedType, IsStaticMethod = true, InvokeCode = body)
+                let ctor = ProvidedConstructor(parameters)
+                let impl = typeof<``ISqlCommand Implementation``>.GetConstructor( [| typeof<DesignTimeConfig>; typeof<string> |])
+                ctor.BaseConstructorCall <- fun args -> impl, args.Head :: designTimeConfig :: args.Tail
+                ctor.InvokeCode <- fun _ -> <@@ () @@>
+                cmdProvidedType.AddMember ctor
            
             do 
                 let impl = 
@@ -177,16 +192,16 @@ type public SqlCommandProvider(config : TypeProviderConfig) as this =
                     ProvidedParameter("commandTimeout", typeof<int>, optionalValue = SqlCommand.DefaultTimeout) 
                 ]
 
-                let body (args: _ list) =
-                    let connArg = <@@ Choice2Of2(%%args.[0]): Choice<string, SqlConnection> @@>
-                    Expr.NewObject(impl, designTimeConfig :: connArg :: args.Tail )
-                    
-                cmdProvidedType.AddMember <| ProvidedConstructor(parameters, InvokeCode = body)
-                cmdProvidedType.AddMember <| ProvidedMethod("Create", parameters, returnType = cmdProvidedType, IsStaticMethod = true, InvokeCode = body)
+                let ctor = ProvidedConstructor(parameters)                  
+                ctor.BaseConstructorCall <- fun args -> 
+                    let connArg = <@@ Choice2Of2(%%args.[1]): Choice<string, SqlConnection> @@>
+                    impl, args.[0] :: designTimeConfig :: connArg :: args.Tail.Tail
+                ctor.InvokeCode <- fun _ -> <@@ () @@>
+                cmdProvidedType.AddMember ctor
 
         do  //AsyncExecute, Execute, and ToTraceString
 
-            let executeArgs = DesignTime.GetExecuteArgs(cmdProvidedType, parameters, udttsPerSchema = null)
+            let executeArgs = DesignTime.GetExecuteArgs(cmdProvidedType, parameters, udttsPerSchema = null, isErased = false)
 
             let hasOutputParameters = false
             let addRedirectToISqlCommandMethod outputType name = 
@@ -199,6 +214,9 @@ type public SqlCommandProvider(config : TypeProviderConfig) as this =
             addRedirectToISqlCommandMethod asyncReturnType "AsyncExecute" 
 
             addRedirectToISqlCommandMethod typeof<string> "ToTraceString" 
+
+        do
+            addToProvidedTempAssembly <| cmdProvidedType :: Option.toList output.ProvidedRowType
 
         cmdProvidedType
 

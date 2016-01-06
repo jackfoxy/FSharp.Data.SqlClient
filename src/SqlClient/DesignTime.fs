@@ -398,7 +398,7 @@ type DesignTime private() =
         else
             None
                 
-    static member internal GetExecuteArgs(cmdProvidedType: ProvidedTypeDefinition, sqlParameters: Parameter list, udttsPerSchema: Dictionary<_, ProvidedTypeDefinition>) = 
+    static member internal GetExecuteArgs(cmdProvidedType: ProvidedTypeDefinition, sqlParameters: Parameter list, udttsPerSchema: Dictionary<_, ProvidedTypeDefinition>, isErased) = 
         [
             for p in sqlParameters do
                 assert p.Name.StartsWith("@")
@@ -425,7 +425,7 @@ type DesignTime private() =
                             then //SqlCommandProvider case
                                 match cmdProvidedType.GetNestedType(p.TypeInfo.UdttName) with 
                                 | null -> 
-                                    let rowType = ProvidedTypeDefinition(p.TypeInfo.UdttName, Some typeof<obj>, HideObjectMethods = true)
+                                    let rowType = ProvidedTypeDefinition(p.TypeInfo.UdttName, Some typeof<obj>, HideObjectMethods = true, IsErased = isErased)
                                     cmdProvidedType.AddMember rowType
 
                                     let parameters = [ 

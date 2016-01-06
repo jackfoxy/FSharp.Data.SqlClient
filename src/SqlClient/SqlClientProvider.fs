@@ -237,7 +237,7 @@ type public SqlClientProvider(config: TypeProviderConfig) as this =
 
                         yield upcast ctor2
 
-                        let executeArgs = DesignTime.GetExecuteArgs(cmdProvidedType, parameters, uddtsPerSchema)
+                        let executeArgs = DesignTime.GetExecuteArgs(cmdProvidedType, parameters, uddtsPerSchema, isErased = true)
 
                         yield upcast DesignTime.AddGeneratedMethod(parameters, hasOutputParameters, executeArgs, cmdProvidedType.BaseType, output.ProvidedType, "Execute") 
 
@@ -556,7 +556,7 @@ type public SqlClientProvider(config: TypeProviderConfig) as this =
 
             do  //AsyncExecute, Execute, and ToTraceString
 
-                let executeArgs = DesignTime.GetExecuteArgs(cmdProvidedType, parameters, udttsPerSchema)
+                let executeArgs = DesignTime.GetExecuteArgs(cmdProvidedType, parameters, udttsPerSchema, isErased = true)
 
                 let addRedirectToISqlCommandMethod outputType name = 
                     let hasOutputParameters = false

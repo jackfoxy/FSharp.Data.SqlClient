@@ -56,9 +56,9 @@ type QuotationsFactory private() =
             if not tvpColumnNames.IsEmpty
             then 
                 let table = new DataTable()
-                for name, typeName in List.zip tvpColumnNames tvpColumnTypes do
-                    let c = new DataColumn(name, Type.GetType( typeName, throwOnError = true))
-                    table.Columns.Add c
+//                for name, typeName in List.zip tvpColumnNames tvpColumnTypes do
+//                    let c = new DataColumn(name, Type.GetType( typeName, throwOnError = true))
+//                    table.Columns.Add c
                 x.Value <- table
             x
         @@>

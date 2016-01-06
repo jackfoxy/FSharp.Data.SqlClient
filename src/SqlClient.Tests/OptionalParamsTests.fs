@@ -17,9 +17,11 @@ let SkipYParam() =
     use cmd = new QueryWithNullableParam()
     Assert.Equal( Some( Some 12), cmd.Execute(x = Some 11))    
 
+type NullableStringInputParameter = SqlCommand<"select ISNULL(CAST(@P1 AS VARCHAR), '')", connection, SingleRow = true, AllParametersOptional = true>
+
 [<Fact>]
-let NullableStringInputParameter() = 
-    use cmd = new SqlCommand<"select ISNULL(CAST(@P1 AS VARCHAR), '')", connection, SingleRow = true, AllParametersOptional = true>()
+let nullableStringInputParameter() = 
+    use cmd = new NullableStringInputParameter()
 
     Assert.Equal(
         expected = Some "",
@@ -35,6 +37,7 @@ let NullableStringInputParameter() =
         expected = Some "boo",
         actual = cmd.Execute( Some "boo")
     )
+
 
 [<Fact>]
 let NullableStringInputMandatoryParameter() = 
